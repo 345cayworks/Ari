@@ -1,5 +1,5 @@
-import type { ToolRegistry } from "./types.js";
-import { rememberTool } from "./remember.js";
+import type { ToolRegistry } from "./types";
+import { rememberTool } from "./remember";
 
 export const tools: ToolRegistry = {
   [rememberTool.definition.name]: rememberTool,
