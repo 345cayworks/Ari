@@ -1,0 +1,78 @@
+{% comment %}
+  common/_footer.html.liquid  (partial)
+  Included with: {% include 'common/footer' %}
+
+  Site footer: about blurb, quick links, contact details, Expo contact, copyright.
+
+  Variables:
+    {{ site.name }}            - site name
+    {{ site.description }}     - short tagline
+    {{ 'now' | date: '%Y' }}   - current year for the copyright line
+                                 (if the date filter is unavailable in your
+                                  build, replace with a literal year.)
+
+  Contact details are hard-coded from the ASI Cayman brief — update here if
+  they change.
+{% endcomment %}
+
+<footer class="asi-footer" role="contentinfo">
+  <div class="asi-container">
+    <div class="asi-footer__grid">
+
+      <div class="asi-footer__col asi-footer__col--about">
+        <div class="asi-logo asi-logo--footer">
+          <span class="asi-logo__mark" aria-hidden="true">ASI</span>
+          <span class="asi-logo__text">
+            <span class="asi-logo__title">{{ site.name | default: 'ASI Cayman' }}</span>
+            <span class="asi-logo__sub">Cayman Islands</span>
+          </span>
+        </div>
+        <p class="asi-footer__about">
+          {{ site.description | default: 'Connecting Adventist business, ministry &amp; community impact across the Cayman Islands — a chapter of Adventist-Laymen&rsquo;s Services &amp; Industries.' }}
+        </p>
+      </div>
+
+      <nav class="asi-footer__col" aria-label="Footer">
+        <h2 class="asi-footer__heading">Explore</h2>
+        <ul class="asi-footer__links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/about">About</a></li>
+          <li><a href="/expo-2026">Expo 2026</a></li>
+          <li><a href="/membership">Membership</a></li>
+          <li><a href="/directory">Business Directory</a></li>
+          <li><a href="/news">News &amp; Updates</a></li>
+          <li><a href="/events">Events</a></li>
+          <li><a href="/contact">Contact</a></li>
+        </ul>
+      </nav>
+
+      <div class="asi-footer__col">
+        <h2 class="asi-footer__heading">Get in Touch</h2>
+        <ul class="asi-footer__contact">
+          <li>
+            <span class="asi-footer__label">Email</span>
+            <a href="mailto:asicayman@gmail.com">asicayman@gmail.com</a>
+          </li>
+          <li>
+            <span class="asi-footer__label">WhatsApp</span>
+            <a href="https://wa.me/13453240458">345-324-0458</a>
+          </li>
+          <li>
+            <span class="asi-footer__label">Location</span>
+            Grand Cayman, Cayman Islands
+          </li>
+        </ul>
+        <a class="asi-btn asi-btn--gold asi-btn--sm" href="/expo-registration">Register for Expo 2026</a>
+      </div>
+
+    </div>
+
+    <div class="asi-footer__bar">
+      <p class="asi-footer__copy">
+        &copy; {{ 'now' | date: '%Y' | default: '2026' }} {{ site.name | default: 'ASI Cayman' }}.
+        A chapter of Adventist-Laymen&rsquo;s Services &amp; Industries.
+      </p>
+      <p class="asi-footer__tagline">Connecting Adventist Business, Ministry &amp; Community Impact</p>
+    </div>
+  </div>
+</footer>

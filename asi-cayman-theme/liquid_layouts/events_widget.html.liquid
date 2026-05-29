@@ -1,0 +1,40 @@
+{% comment %}
+  events_widget.html.liquid  —  Events widget render template
+  Mapped in liquid_layouts.yml as: events_widget -> events_widget
+  Preloaded in layouts.yml (home -> sidebar, landing -> feature, two_column -> sidebar).
+
+  Variables:
+    {{ site.widget_preferences.title }} - widget title set in the widget config
+    {{ site.widget_preferences.limit }} - max items (config.limit in layouts.yml)
+    {{ events }}                         - collection from the Events extension
+      each item: .title .start_at .location .url
+  Field names (start_at, location, url) may vary by build — verify in the editor.
+{% endcomment %}
+
+<section class="asi-widget asi-widget--events" aria-labelledby="asi-events-widget-title">
+  <h2 class="asi-widget__title" id="asi-events-widget-title">
+    {{ site.widget_preferences.title | default: 'Upcoming Events' }}
+  </h2>
+
+  {% if events and events.size > 0 %}
+    {% assign event_limit = site.widget_preferences.limit | default: 5 %}
+    <ul class="asi-eventlist">
+      {% for event in events limit: event_limit %}
+        <li class="asi-eventlist__item">
+          {% if event.start_at %}
+            <p class="asi-eventlist__date">
+              <time datetime="{{ event.start_at | date: '%Y-%m-%d' }}">{{ event.start_at | date: '%b %-d' }}</time>
+            </p>
+          {% endif %}
+          <div class="asi-eventlist__body">
+            <a class="asi-eventlist__link" href="{{ event.url | default: '/events' }}">{{ event.title }}</a>
+            {% if event.location %}<p class="asi-eventlist__loc">{{ event.location }}</p>{% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    <a class="asi-btn asi-btn--ghost asi-btn--sm" href="/events">View all events</a>
+  {% else %}
+    <p class="asi-empty">No upcoming events right now. Please check back soon.</p>
+  {% endif %}
+</section>

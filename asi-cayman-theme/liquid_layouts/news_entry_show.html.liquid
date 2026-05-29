@@ -1,0 +1,48 @@
+{% comment %}
+  news_entry_show.html.liquid  —  single News article
+  Mapped in liquid_layouts.yml as: news_entry_show -> news_entry_show
+
+  Variables (News extension):
+    {{ news_entry.title }}
+    {{ news_entry.body }}          - rich HTML; do NOT escape
+    {{ news_entry.published_at }}  - date; formatted with the date filter
+    {{ news_entry.author }}        - optional; guarded below
+  Adjust field names if your News extension differs (verify in the editor).
+{% endcomment %}
+
+{% include 'common/header' %}
+
+<main id="main" class="asi-main asi-main--page" role="main">
+
+  <article class="asi-article">
+    <header class="asi-pagehead">
+      <div class="asi-container">
+        <p class="asi-eyebrow"><a href="/news" class="asi-eyebrow__link">News &amp; Updates</a></p>
+        <h1 class="asi-pagehead__title">{{ news_entry.title }}</h1>
+        <p class="asi-article__meta">
+          {% if news_entry.published_at %}
+            <time datetime="{{ news_entry.published_at | date: '%Y-%m-%d' }}">
+              {{ news_entry.published_at | date: '%B %-d, %Y' }}
+            </time>
+          {% endif %}
+          {% if news_entry.author %} &middot; <span class="asi-article__author">{{ news_entry.author }}</span>{% endif %}
+        </p>
+      </div>
+    </header>
+
+    <div class="asi-container asi-page">
+      <div class="asi-article__body asi-prose">
+        {{ news_entry.body }}
+      </div>
+
+      <p class="asi-article__back">
+        <a class="asi-btn asi-btn--outline" href="/news">&lsaquo; Back to all updates</a>
+      </p>
+    </div>
+  </article>
+
+  {% include 'common/cta' %}
+
+</main>
+
+{% include 'common/footer' %}

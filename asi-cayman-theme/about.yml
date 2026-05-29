@@ -1,0 +1,16 @@
+# about.yml
+# netAdventist theme metadata for "Themes for Designers".
+# Required: title, version. Optional: description, about_url,
+# setup_instructions_url, required_extensions.
+# YAML uses spaces (no tabs). Quoted values keep numbers/URLs as strings.
+
+title: ASI Cayman Theme
+version: "1.0"
+description: A clean, professional ASI Cayman theme for Adventist business, ministry, events, membership, community outreach, and the ASI Cayman Business & Career Expo.
+about_url: "https://asicayman.cayworks.com/about"
+setup_instructions_url: "https://asicayman.cayworks.com"
+required_extensions:
+  - news
+  - events
+  - slideshow
+  - document_groups

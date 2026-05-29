@@ -1,0 +1,58 @@
+{% comment %}
+  common/_header.html.liquid  (partial)
+  Included with: {% include 'common/header' %}
+
+  Site header: logo placeholder + primary navigation + mobile menu toggle.
+
+  Variables:
+    {{ site.name }}        - the netAdventist site name (used as the text logo fallback)
+    {{ site.description }} - short tagline (used for the logo's accessible label)
+
+  Navigation links below use plain relative paths (/about, /expo-2026, ...).
+  netAdventist may generate its own menu/slugs; after upload, confirm each
+  href matches the real page URL/slug, or swap this block for the site's
+  built-in navigation widget. Labels are the ones requested for ASI Cayman.
+{% endcomment %}
+
+<a class="asi-skip-link" href="#main">Skip to main content</a>
+
+<header class="asi-header" role="banner">
+  <div class="asi-container asi-header__inner">
+
+    {% comment %} Logo placeholder. Drop a real logo at assets/images/asi-cayman-logo.png
+       and replace the text span with an <img> (see assets/images/README.md). {% endcomment %}
+    <a class="asi-logo" href="/" aria-label="{{ site.name | default: 'ASI Cayman' }} — Home">
+      <span class="asi-logo__mark" aria-hidden="true">ASI</span>
+      <span class="asi-logo__text">
+        <span class="asi-logo__title">{{ site.name | default: 'ASI Cayman' }}</span>
+        <span class="asi-logo__sub">Cayman Islands</span>
+      </span>
+    </a>
+
+    <button class="asi-nav-toggle" type="button"
+            aria-expanded="false" aria-controls="asi-primary-nav"
+            data-asi-nav-toggle>
+      <span class="asi-nav-toggle__box" aria-hidden="true">
+        <span class="asi-nav-toggle__bar"></span>
+        <span class="asi-nav-toggle__bar"></span>
+        <span class="asi-nav-toggle__bar"></span>
+      </span>
+      <span class="asi-sr-only">Toggle navigation menu</span>
+    </button>
+
+    <nav class="asi-nav" id="asi-primary-nav" aria-label="Primary">
+      <ul class="asi-nav__list">
+        <li class="asi-nav__item"><a class="asi-nav__link" href="/">Home</a></li>
+        <li class="asi-nav__item"><a class="asi-nav__link" href="/about">About</a></li>
+        <li class="asi-nav__item"><a class="asi-nav__link" href="/expo-2026">Expo 2026</a></li>
+        <li class="asi-nav__item"><a class="asi-nav__link" href="/membership">Membership</a></li>
+        <li class="asi-nav__item"><a class="asi-nav__link" href="/directory">Directory</a></li>
+        <li class="asi-nav__item"><a class="asi-nav__link" href="/contact">Contact</a></li>
+        <li class="asi-nav__item asi-nav__item--cta">
+          <a class="asi-btn asi-btn--gold asi-btn--sm" href="/expo-registration">Register</a>
+        </li>
+      </ul>
+    </nav>
+
+  </div>
+</header>

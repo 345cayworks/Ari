@@ -1,0 +1,43 @@
+{% comment %}
+  common/_cta.html.liquid  (partial)
+  Included with: {% include 'common/cta' %}
+
+  Reusable call-to-action band. Defaults to the ASI Cayman Expo + Membership
+  CTA. You can override the text/links by assigning variables before the
+  include, e.g.:
+
+      {% assign cta_eyebrow = 'Join us' %}
+      {% assign cta_title   = 'Become an ASI Cayman member' %}
+      {% assign cta_text    = 'Connect with Adventist professionals across Cayman.' %}
+      {% assign cta_primary_label = 'Become a Member' %}
+      {% assign cta_primary_url   = '/membership' %}
+      {% assign cta_secondary_label = 'Contact Us' %}
+      {% assign cta_secondary_url   = '/contact' %}
+      {% include 'common/cta' %}
+
+  If no variables are assigned, the defaults below are used. The "default"
+  filter keeps this partial safe whether or not your netAdventist build
+  supports passing include parameters.
+{% endcomment %}
+
+<section class="asi-cta" aria-labelledby="asi-cta-title">
+  <div class="asi-container asi-cta__inner">
+    <p class="asi-eyebrow asi-eyebrow--light">{{ cta_eyebrow | default: 'ASI Cayman' }}</p>
+    <h2 class="asi-cta__title" id="asi-cta-title">
+      {{ cta_title | default: 'Ready to connect business, ministry &amp; community?' }}
+    </h2>
+    <p class="asi-cta__text">
+      {{ cta_text | default: 'Register for the ASI Cayman Business &amp; Career Expo 2026, or join a growing network of Adventist business owners, professionals, and service-minded members.' }}
+    </p>
+    <div class="asi-cta__actions">
+      <a class="asi-btn asi-btn--gold asi-btn--lg"
+         href="{{ cta_primary_url | default: '/expo-registration' }}">
+        {{ cta_primary_label | default: 'Register for Expo 2026' }}
+      </a>
+      <a class="asi-btn asi-btn--ghost asi-btn--lg"
+         href="{{ cta_secondary_url | default: '/membership' }}">
+        {{ cta_secondary_label | default: 'Become a Member' }}
+      </a>
+    </div>
+  </div>
+</section>

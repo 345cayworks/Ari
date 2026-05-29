@@ -1,0 +1,43 @@
+# liquid_layouts.yml
+# Maps netAdventist Liquid layout slugs to the template files that live in the
+# liquid_layouts/ folder. Each "template" value is the file BASENAME, without
+# the ".html.liquid" extension (e.g. template "page" -> liquid_layouts/page.html.liquid).
+#
+# Every mapping below points to a real file in liquid_layouts/.
+#
+# NOTE: Some netAdventist builds key these differently (a "file:" key, or a
+# full path). If yours does, keep the slugs the same and adjust only the value
+# format inside the Liquid editor after upload. The slugs (home, page_show,
+# news_entry_show, news_entry_index, events_widget, news_entry_widget) are the
+# standard hooks netAdventist looks for.
+
+liquid_layouts:
+  home:
+    name: Home
+    description: ASI Cayman homepage with hero, impact intro, Expo feature, audience cards, and widget areas.
+    template: home
+
+  page_show:
+    name: Standard Page
+    description: General content page (About, Membership, Directory, Contact, Expo 2026, Register).
+    template: page
+
+  news_entry_show:
+    name: News Article
+    description: Single news / update article view.
+    template: news_entry_show
+
+  news_entry_index:
+    name: News Index
+    description: Paginated list of news / updates.
+    template: news_entry_index
+
+  events_widget:
+    name: Events Widget
+    description: Liquid markup for the Events widget (sidebar / feature area).
+    template: events_widget
+
+  news_entry_widget:
+    name: News Widget
+    description: Liquid markup for the News widget (content area).
+    template: news_entry_widget

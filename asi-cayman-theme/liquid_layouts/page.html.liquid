@@ -1,0 +1,40 @@
+{% comment %}
+  page.html.liquid  —  ASI Cayman standard content page
+  Mapped in liquid_layouts.yml as: page_show -> page
+
+  Used for About, Membership, Directory, Contact, Expo 2026, Register, etc.
+
+  Variables:
+    {{ page.title }}   - the page title
+    {{ page.content }} - the rich-text body managed in the netAdventist editor
+                         (already HTML; do NOT pipe through escape).
+  If your build uses different keys (e.g. {{ page.body }}), adjust here.
+{% endcomment %}
+
+{% include 'common/header' %}
+
+<main id="main" class="asi-main asi-main--page" role="main">
+
+  <header class="asi-pagehead">
+    <div class="asi-container">
+      <p class="asi-eyebrow">ASI Cayman</p>
+      <h1 class="asi-pagehead__title">{{ page.title | default: site.name }}</h1>
+    </div>
+  </header>
+
+  <div class="asi-container asi-page">
+    <article class="asi-page__body asi-prose">
+      {% if page.content %}
+        {{ page.content }}
+      {% else %}
+        <p>This page&rsquo;s content is managed in the netAdventist editor. Add your copy there and it will appear here.</p>
+      {% endif %}
+    </article>
+  </div>
+
+  {% comment %} Closing CTA — light touch on every standard page. {% endcomment %}
+  {% include 'common/cta' %}
+
+</main>
+
+{% include 'common/footer' %}

@@ -1,0 +1,31 @@
+# containers.yml
+# Defines the named content regions ("containers") this theme exposes.
+# Container slugs MUST match the names referenced in layouts.yml and in the
+# Liquid templates (e.g. the <div class="container-..."> wrappers / widget
+# placement). Keep these slugs stable: header, hero, content, feature,
+# sidebar, footer.
+#
+# NOTE: Different netAdventist builds accept slightly different keys for a
+# container (some only need a label, others accept description/notes). The
+# slug (the YAML key) is the part that must stay consistent everywhere. If
+# your instance rejects an extra key, remove it in the editor after upload.
+
+containers:
+  header:
+    name: Header
+    description: Site header region for the logo placeholder and primary navigation.
+  hero:
+    name: Hero
+    description: Hero banner region for the eyebrow, headline, intro text, and primary calls to action.
+  content:
+    name: Content
+    description: Main content region for page body copy and the News widget.
+  feature:
+    name: Feature
+    description: Full-width feature region used for the Expo 2026 highlight and promotional CTAs.
+  sidebar:
+    name: Sidebar
+    description: Sidebar region for the Events widget, quick links, and secondary content.
+  footer:
+    name: Footer
+    description: Footer region for contact details, secondary navigation, and copyright.

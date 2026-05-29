@@ -1,0 +1,110 @@
+# layouts.yml
+# Defines the page layouts and which containers each one exposes, plus a
+# sensible 12-column grid hint and any widgets preloaded into a container.
+#
+# Preloaded widgets require three keys: extension, container, config.
+#   extension -> the netAdventist extension that renders the widget
+#   container -> one of the container slugs declared in containers.yml
+#   config    -> widget settings (surfaced as site.widget_preferences.* in Liquid)
+#
+# NOTE: Grid handling varies between netAdventist builds. The "grid" block
+# below is a hint that pairs with the CSS grid classes in
+# assets/css/asi-cayman.css. If your instance ignores the grid block it is
+# harmless; the CSS still lays the page out. Containers and preloaded_widgets
+# are the load-bearing parts. Adjust extension slugs in the editor if your
+# instance names them differently (see README "Extension notes").
+
+layouts:
+  home:
+    name: Home
+    description: ASI Cayman homepage — hero, impact intro, Expo feature, audience cards, plus News and Events widgets.
+    containers:
+      - header
+      - hero
+      - feature
+      - content
+      - sidebar
+      - footer
+    grid:
+      columns: 12
+      regions:
+        header:  { span: 12 }
+        hero:    { span: 12 }
+        feature: { span: 12 }
+        content: { span: 8 }
+        sidebar: { span: 4 }
+        footer:  { span: 12 }
+    preloaded_widgets:
+      - extension: news
+        container: content
+        config:
+          title: News & Updates
+          limit: 4
+          show_date: true
+      - extension: events
+        container: sidebar
+        config:
+          title: Upcoming Events
+          limit: 5
+          show_date: true
+
+  page:
+    name: Standard Page
+    description: Single-column content page for About, Membership, Directory, Contact, Expo 2026, and Register.
+    containers:
+      - header
+      - content
+      - footer
+    grid:
+      columns: 12
+      regions:
+        header:  { span: 12 }
+        content: { span: 12 }
+        footer:  { span: 12 }
+    preloaded_widgets: []
+
+  two_column:
+    name: Two Column
+    description: Content with a sidebar — used for News index/article pages and any page that needs the Events widget alongside.
+    containers:
+      - header
+      - content
+      - sidebar
+      - footer
+    grid:
+      columns: 12
+      regions:
+        header:  { span: 12 }
+        content: { span: 8 }
+        sidebar: { span: 4 }
+        footer:  { span: 12 }
+    preloaded_widgets:
+      - extension: events
+        container: sidebar
+        config:
+          title: Upcoming Events
+          limit: 5
+          show_date: true
+
+  landing:
+    name: Landing
+    description: Focused campaign/landing layout for the Expo 2026 promotion and Register page — hero + feature, minimal chrome.
+    containers:
+      - header
+      - hero
+      - feature
+      - footer
+    grid:
+      columns: 12
+      regions:
+        header:  { span: 12 }
+        hero:    { span: 12 }
+        feature: { span: 12 }
+        footer:  { span: 12 }
+    preloaded_widgets:
+      - extension: events
+        container: feature
+        config:
+          title: Expo 2026
+          limit: 3
+          show_date: true

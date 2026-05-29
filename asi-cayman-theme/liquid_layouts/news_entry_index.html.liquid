@@ -1,0 +1,59 @@
+{% comment %}
+  news_entry_index.html.liquid  —  News / Updates listing
+  Mapped in liquid_layouts.yml as: news_entry_index -> news_entry_index
+
+  Variables (News extension):
+    {{ news_entries }}  - collection of news entries to iterate
+      each item: .title .body .published_at .url
+  Pagination markup at the bottom is a best-effort guess; netAdventist may
+  expose its own paginate helper — adjust in the editor if needed.
+{% endcomment %}
+
+{% include 'common/header' %}
+
+<main id="main" class="asi-main asi-main--page" role="main">
+
+  <header class="asi-pagehead">
+    <div class="asi-container">
+      <p class="asi-eyebrow">ASI Cayman</p>
+      <h1 class="asi-pagehead__title">News &amp; Updates</h1>
+      <p class="asi-pagehead__lead">Stories, announcements, and ministry updates from ASI Cayman.</p>
+    </div>
+  </header>
+
+  <div class="asi-container asi-page">
+    {% if news_entries and news_entries.size > 0 %}
+      <ul class="asi-newsgrid asi-grid asi-grid--3">
+        {% for news_entry in news_entries %}
+          <li class="asi-newscard">
+            {% if news_entry.published_at %}
+              <p class="asi-newscard__date">{{ news_entry.published_at | date: '%B %-d, %Y' }}</p>
+            {% endif %}
+            <h2 class="asi-newscard__title">
+              <a href="{{ news_entry.url | default: '/news' }}">{{ news_entry.title }}</a>
+            </h2>
+            <p class="asi-newscard__excerpt">
+              {{ news_entry.body | strip_html | truncatewords: 32 }}
+            </p>
+            <a class="asi-card__link" href="{{ news_entry.url | default: '/news' }}">Read more &rsaquo;</a>
+          </li>
+        {% endfor %}
+      </ul>
+
+      {% comment %} Optional pagination — keep if your build exposes these. {% endcomment %}
+      {% if paginate %}
+        <nav class="asi-pagination" aria-label="News pagination">
+          {{ paginate.previous }}
+          {{ paginate.next }}
+        </nav>
+      {% endif %}
+    {% else %}
+      <p class="asi-empty">No updates have been published yet. Check back soon.</p>
+    {% endif %}
+  </div>
+
+  {% include 'common/cta' %}
+
+</main>
+
+{% include 'common/footer' %}

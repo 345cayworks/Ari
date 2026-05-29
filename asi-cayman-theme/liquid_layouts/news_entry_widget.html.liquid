@@ -1,0 +1,42 @@
+{% comment %}
+  news_entry_widget.html.liquid  —  News widget render template
+  Mapped in liquid_layouts.yml as: news_entry_widget -> news_entry_widget
+  Preloaded in layouts.yml (home -> content).
+
+  Variables:
+    {{ site.widget_preferences.title }} - widget title set in the widget config
+    {{ site.widget_preferences.limit }} - max items (config.limit in layouts.yml)
+    {{ news_entries }}                   - collection from the News extension
+      each item: .title .body .published_at .url
+  Verify field names in the editor; adjust if your News extension differs.
+{% endcomment %}
+
+<section class="asi-widget asi-widget--news" aria-labelledby="asi-news-widget-title">
+  <h2 class="asi-widget__title" id="asi-news-widget-title">
+    {{ site.widget_preferences.title | default: 'News &amp; Updates' }}
+  </h2>
+
+  {% if news_entries and news_entries.size > 0 %}
+    {% assign news_limit = site.widget_preferences.limit | default: 4 %}
+    <ul class="asi-newslist">
+      {% for news_entry in news_entries limit: news_limit %}
+        <li class="asi-newslist__item">
+          <a class="asi-newslist__link" href="{{ news_entry.url | default: '/news' }}">
+            <h3 class="asi-newslist__title">{{ news_entry.title }}</h3>
+          </a>
+          {% if news_entry.published_at %}
+            <p class="asi-newslist__date">
+              <time datetime="{{ news_entry.published_at | date: '%Y-%m-%d' }}">
+                {{ news_entry.published_at | date: '%B %-d, %Y' }}
+              </time>
+            </p>
+          {% endif %}
+          <p class="asi-newslist__excerpt">{{ news_entry.body | strip_html | truncatewords: 24 }}</p>
+        </li>
+      {% endfor %}
+    </ul>
+    <a class="asi-btn asi-btn--outline asi-btn--sm" href="/news">View all updates</a>
+  {% else %}
+    <p class="asi-empty">No news has been published yet. Check back soon.</p>
+  {% endif %}
+</section>
