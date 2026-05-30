@@ -32,6 +32,7 @@ asi-cayman-theme/
       _header.html.liquid        # Partial: logo + nav + mobile toggle
       _footer.html.liquid        # Partial: contact, links, copyright
       _cta.html.liquid           # Partial: reusable call-to-action band
+      _slideshow.html.liquid     # Partial: optional hero background slideshow
   assets/
     css/
       asi-cayman.css             # All theme styles
@@ -92,8 +93,10 @@ required_extensions:
 - **news** — powers News/Updates pages and the News widget
   (`news_entry_show`, `news_entry_index`, `news_entry_widget`).
 - **events** — powers the Events widget and `/events`.
-- **slideshow** — reserved for an optional hero/gallery slideshow (the theme
-  works without it; included so designers can add one).
+- **slideshow** — powers the **optional hero background slideshow** on the
+  homepage (`common/_slideshow.html.liquid`). Add slides in the Slideshow
+  extension and they cross-fade behind the hero headline; with no slides the
+  hero falls back to its CSS gradient, so the theme still works without it.
 - **document_groups** — reserved for the Business Directory / membership
   documents and downloadable resources.
 
@@ -142,6 +145,10 @@ by instance**. Test inside the netAdventist Liquid editor and adjust as needed:
     `{% widget_container 'sidebar' %}`) for builds that inject preloaded widgets
     into containers. Keep whichever your instance honors; delete the other to
     avoid duplicate output.
+  - **Slideshow slides.** `common/_slideshow.html.liquid` reads `slideshow.slides`
+    (falling back to a bare `slides`); each slide uses `slide.image_url` (falling
+    back to `slide.image`) plus optional `slide.title`. Confirm the slide
+    collection/field names your Slideshow extension exposes.
   - `asset_url` filter for images and `date` filter formatting.
   - Pagination on `news_entry_index.html.liquid` (`paginate.previous/next`).
 - **Includes** use relative paths and underscore-prefixed partials, e.g.

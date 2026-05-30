@@ -222,12 +222,32 @@ ul { margin: 0; padding: 0; }
 
 /* ---------- 6. Hero ---------- */
 .asi-hero {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   background:
     radial-gradient(1200px 500px at 80% -10%, rgba(31,138,138,0.35), transparent 60%),
     linear-gradient(135deg, var(--asi-navy) 0%, var(--asi-blue) 60%, var(--asi-blue-light) 100%);
   color: #fff;
 }
-.asi-hero__inner { padding-block: clamp(3rem, 7vw, 6rem); }
+/* Optional slideshow background (slideshow extension) — common/_slideshow.html.liquid */
+.asi-hero__slides { position: absolute; inset: 0; z-index: 0; }
+.asi-hero__slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1s ease;
+}
+.asi-hero__slide.is-active { opacity: 1; }
+.asi-hero__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(135deg, rgba(11,37,69,0.86), rgba(19,73,122,0.72));
+}
+.asi-hero__inner { position: relative; z-index: 2; padding-block: clamp(3rem, 7vw, 6rem); }
 .asi-hero__content { max-width: 760px; }
 .asi-hero__title {
   color: #fff;

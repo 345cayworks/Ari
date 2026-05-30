@@ -1,0 +1,31 @@
+{% comment %}
+  common/_slideshow.html.liquid  (partial)
+  Included with: {% include 'common/slideshow' %}
+
+  Optional hero BACKGROUND slideshow, powered by the netAdventist "slideshow"
+  extension. It renders cross-fading images behind the hero's headline/CTAs.
+  If no slides are configured, this outputs nothing and the hero falls back to
+  its CSS gradient — so the homepage always looks finished.
+
+  Variables (verify/adjust in the Liquid editor — slideshow objects vary):
+    slideshow.slides   - the collection of slides (falls back to a bare `slides`)
+    slide.image_url    - the slide image (falls back to slide.image)
+    slide.title        - optional; used only for the accessible image label
+  The slides layer is aria-hidden (decorative); the real hero content stays the
+  accessible foreground. Auto-advance is handled by assets/js/asi-cayman.js and
+  respects prefers-reduced-motion.
+{% endcomment %}
+
+{% assign asi_slides = slideshow.slides | default: slides %}
+
+{% if asi_slides and asi_slides.size > 0 %}
+  <div class="asi-hero__slides" data-asi-slideshow aria-hidden="true">
+    {% for slide in asi_slides %}
+      <div class="asi-hero__slide{% if forloop.first %} is-active{% endif %}"
+           role="img"
+           aria-label="{{ slide.title | default: 'Slide' }}"
+           style="background-image: url('{{ slide.image_url | default: slide.image }}');"></div>
+    {% endfor %}
+  </div>
+  <div class="asi-hero__scrim" aria-hidden="true"></div>
+{% endif %}

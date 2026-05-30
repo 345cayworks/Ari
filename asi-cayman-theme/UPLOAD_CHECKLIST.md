@@ -17,8 +17,9 @@ Work top to bottom. Don't zip until everything in **A** and **B** is checked.
       `news_entry_widget.html.liquid`.
 - [ ] **Confirm partial paths.** Partials are underscore-prefixed
       (`common/_header.html.liquid`, `common/_footer.html.liquid`,
-      `common/_cta.html.liquid`) and are included as
-      `{% include 'common/header' %}`, `'common/footer'`, `'common/cta'`.
+      `common/_cta.html.liquid`, `common/_slideshow.html.liquid`) and are
+      included as `{% include 'common/header' %}`, `'common/footer'`,
+      `'common/cta'`, `'common/slideshow'`.
 - [ ] **Confirm CSS/JS paths.** `assets/css/asi-cayman.css` and
       `assets/js/asi-cayman.js` exist and are referenced wherever the theme
       loads assets.
@@ -51,6 +52,9 @@ Work top to bottom. Don't zip until everything in **A** and **B** is checked.
 
 - [ ] **Test homepage** — hero, impact intro, Expo feature + pricing, audience
       cards, and the News/Events widget area all render.
+- [ ] **Test the hero slideshow (optional)** — with the Slideshow extension
+      enabled and slides added, the hero shows cross-fading images behind the
+      headline; with no slides it shows the gradient hero.
 - [ ] **Test a standard page** (`page_show`) — About or Membership shows
       `{{ page.title }}` and `{{ page.content }}` correctly.
 - [ ] **Test a news page** — `news_entry_index` lists entries;

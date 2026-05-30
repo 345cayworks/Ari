@@ -23,6 +23,9 @@
 
   {% comment %} ===================== 2. HERO ===================== {% endcomment %}
   <section class="asi-hero" aria-labelledby="asi-hero-title">
+    {% comment %} Optional slideshow background (slideshow extension). Renders
+       only when slides exist; otherwise the CSS gradient hero shows. {% endcomment %}
+    {% include 'common/slideshow' %}
     <div class="asi-container asi-hero__inner">
       <div class="asi-hero__content">
         <p class="asi-eyebrow asi-eyebrow--light">ASI Cayman</p>

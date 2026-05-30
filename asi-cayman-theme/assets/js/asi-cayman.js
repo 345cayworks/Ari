@@ -76,5 +76,37 @@
         }
       }, 150);
     });
+
+    // Hero background slideshow (slideshow extension)
+    initHeroSlideshow();
   });
+
+  // Cross-fade the hero background slides. No-ops if there are <2 slides or the
+  // user prefers reduced motion. Pauses while the tab is hidden.
+  function initHeroSlideshow() {
+    var box = document.querySelector("[data-asi-slideshow]");
+    if (!box) { return; }
+
+    var slides = box.querySelectorAll(".asi-hero__slide");
+    if (slides.length < 2) { return; }
+
+    var reduce = window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { return; } // keep the first slide static
+
+    var index = 0;
+    var DELAY = 6000;
+    var timer = window.setInterval(advance, DELAY);
+
+    function advance() {
+      slides[index].classList.remove("is-active");
+      index = (index + 1) % slides.length;
+      slides[index].classList.add("is-active");
+    }
+
+    document.addEventListener("visibilitychange", function () {
+      window.clearInterval(timer);
+      if (!document.hidden) { timer = window.setInterval(advance, DELAY); }
+    });
+  }
 })();
