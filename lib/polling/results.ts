@@ -65,24 +65,31 @@ function parseOptions(text?: string): string[] {
 export interface Tally {
   questionId: string;
   text?: string;
-  total: number;
-  answers: { answer: string; count: number }[];
+  total: number; // respondents (unweighted)
+  totalWeight: number; // equals total when unweighted
+  answers: { answer: string; count: number; weight: number }[];
 }
 
 // Count answers per question. Answers are grouped case-insensitively and
 // shown with their most common spelling, in the question's option order
-// when it lists one, otherwise by count.
+// when it lists one, otherwise by count. With `weights` (by pollCallId),
+// each answer also carries its weighted total.
 export function tallyResponses(
-  responses: Pick<PollResponse, "questionId" | "answer">[],
-  texts: Map<string, string>
+  responses: Pick<PollResponse, "pollCallId" | "questionId" | "answer">[],
+  texts: Map<string, string>,
+  weights?: Map<string, number>
 ): Tally[] {
-  const byQuestion = new Map<string, Map<string, { count: number; spellings: Map<string, number> }>>();
+  const byQuestion = new Map<
+    string,
+    Map<string, { count: number; weight: number; spellings: Map<string, number> }>
+  >();
   for (const r of responses) {
     const answers = byQuestion.get(r.questionId) ?? new Map();
     byQuestion.set(r.questionId, answers);
     const key = r.answer.trim().toLowerCase();
-    const entry = answers.get(key) ?? { count: 0, spellings: new Map<string, number>() };
+    const entry = answers.get(key) ?? { count: 0, weight: 0, spellings: new Map<string, number>() };
     entry.count += 1;
+    entry.weight += weights ? weights.get(r.pollCallId) ?? 0 : 1;
     entry.spellings.set(r.answer.trim(), (entry.spellings.get(r.answer.trim()) ?? 0) + 1);
     answers.set(key, entry);
   }
@@ -100,13 +107,15 @@ export function tallyResponses(
           key,
           answer: [...e.spellings.entries()].sort((x, y) => y[1] - x[1])[0][0],
           count: e.count,
+          weight: e.weight,
         }))
-        .sort((a, b) => rank(a.key) - rank(b.key) || b.count - a.count)
-        .map(({ answer, count }) => ({ answer, count }));
+        .sort((a, b) => rank(a.key) - rank(b.key) || b.weight - a.weight)
+        .map(({ answer, count, weight }) => ({ answer, count, weight }));
       return {
         questionId,
         text: texts.get(questionId),
         total: list.reduce((n, a) => n + a.count, 0),
+        totalWeight: list.reduce((n, a) => n + a.weight, 0),
         answers: list,
       };
     });

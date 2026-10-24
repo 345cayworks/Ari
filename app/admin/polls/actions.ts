@@ -6,7 +6,9 @@ import { PollStatus, Role } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createPollBatch, DoNotCallError, placePollCall } from "@/lib/polling/calls";
+import { TARGET_PRESETS } from "@/lib/polling/census";
 import { normalizePhone } from "@/lib/polling/phone";
+import { parseCategories, readWeightingConfig, type WeightTarget } from "@/lib/polling/weighting";
 import {
   MAX_BATCH_NUMBERS,
   MAX_CALLS_PER_SUBMIT,
@@ -200,6 +202,76 @@ export async function createBatch(formData: FormData): Promise<void> {
     ...(result!.error ? { error: result!.error } : {}),
     batch: String(Date.now()),
   });
+}
+
+// --- Weighting ---------------------------------------------------
+
+function weightingUrl(pollId: string, params: Record<string, string> = {}): string {
+  return `/admin/polls/${pollId}?${new URLSearchParams({ tab: "weighting", ...params })}`;
+}
+
+export async function addWeightingTarget(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const config = readWeightingConfig(poll.weighting);
+  const questionId = field(formData, "questionId").toUpperCase();
+  if (!questionId) redirect(weightingUrl(poll.id, { error: "Choose the question to weight on." }));
+  if (config.targets.some((t) => t.questionId === questionId)) {
+    redirect(weightingUrl(poll.id, { error: `${questionId} is already a weighting target.` }));
+  }
+  const preset = TARGET_PRESETS.find((p) => p.key === field(formData, "preset"));
+  const target: WeightTarget = preset
+    ? { questionId, label: preset.label, source: preset.source, categories: preset.categories }
+    : { questionId, label: field(formData, "label") || questionId, categories: [] };
+  await prisma.poll.update({
+    where: { id: poll.id },
+    data: { weighting: { ...config, targets: [...config.targets, target] } as object },
+  });
+  redirect(weightingUrl(poll.id));
+}
+
+export async function removeWeightingTarget(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const config = readWeightingConfig(poll.weighting);
+  const questionId = field(formData, "questionId");
+  await prisma.poll.update({
+    where: { id: poll.id },
+    data: {
+      weighting: { ...config, targets: config.targets.filter((t) => t.questionId !== questionId) } as object,
+    },
+  });
+  redirect(weightingUrl(poll.id));
+}
+
+export async function saveWeighting(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const config = readWeightingConfig(poll.weighting);
+
+  const targets: WeightTarget[] = [];
+  for (const t of config.targets) {
+    const { categories, error } = parseCategories(field(formData, `categories:${t.questionId}`));
+    if (error) redirect(weightingUrl(poll.id, { error: `${t.label} (${t.questionId}): ${error}` }));
+    targets.push({
+      ...t,
+      label: field(formData, `label:${t.questionId}`) || t.label,
+      source: field(formData, `source:${t.questionId}`) || undefined,
+      categories,
+    });
+  }
+
+  const trimMin = Number(field(formData, "trimMin"));
+  const trimMax = Number(field(formData, "trimMax"));
+  if (!(trimMin > 0 && trimMin < 1 && trimMax > 1)) {
+    redirect(weightingUrl(poll.id, { error: "Weight caps need a minimum between 0 and 1 and a maximum above 1." }));
+  }
+
+  await prisma.poll.update({
+    where: { id: poll.id },
+    data: {
+      weighting: { enabled: formData.get("enabled") === "on", targets, trimMin, trimMax } as object,
+    },
+  });
+  revalidatePath(`/admin/polls/${poll.id}`);
+  redirect(weightingUrl(poll.id, { saved: "1" }));
 }
 
 export async function resolveCallback(formData: FormData): Promise<void> {

@@ -3,6 +3,7 @@ import { Role } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { compareQuestionIds } from "@/lib/polling/results";
+import { loadPollResults } from "@/lib/polling/weighted";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,9 @@ export async function GET(
   const poll = await prisma.poll.findFirst({ where: { id: params.id, tenantId } });
   if (!poll) return NextResponse.json({ error: "not found" }, { status: 404 });
 
+  // Weights cover completed interviews, the base the Results tab uses.
+  const { weighting } = await loadPollResults(poll, { includePartial: false, weighted: true });
+
   const calls = await prisma.pollCall.findMany({
     where: { pollId: poll.id },
     orderBy: { createdAt: "asc" },
@@ -47,6 +51,7 @@ export async function GET(
     "consent_given",
     "duration_seconds",
     "last_question_reached",
+    ...(weighting ? ["weight"] : []),
     ...analysisKeys,
     ...questionIds,
   ];
@@ -61,6 +66,7 @@ export async function GET(
       c.consentGiven,
       c.durationMs != null ? Math.round(c.durationMs / 1000) : null,
       c.lastQuestionReached,
+      ...(weighting ? [weighting.weights.get(c.id)?.toFixed(4) ?? ""] : []),
       ...analysisKeys.map((k) => analysis[k]),
       ...questionIds.map((q) => answers.get(q)),
     ];

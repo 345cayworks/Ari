@@ -210,6 +210,8 @@ model Poll {
   // Retell dynamic variables injected into the prompt on every call:
   // poll_name, poll_topic, screening_questions, survey_questions, ...
   variables      Json           @default("{}")
+  // Raking targets, see lib/polling/weighting.ts (WeightingConfig).
+  weighting      Json           @default("{}")
   calls          PollCall[]
   callbacks      PollCallback[]
   batches        PollBatch[]

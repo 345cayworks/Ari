@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Poll, PollCallOutcome } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { loadPollResults } from "@/lib/polling/weighted";
 import { cn, formatRelative } from "@/lib/utils";
 import {
   compareQuestionIds,
@@ -12,13 +13,13 @@ import {
   MAX_BATCH_NUMBERS,
   MAX_CALLS_PER_SUBMIT,
   minutesToTime,
-  parseQuestionText,
   POLL_VARIABLES,
-  tallyResponses,
   WEEKDAYS,
 } from "@/lib/polling/results";
 import { createBatch, placeCalls, resolveCallback, setPollStatus, updatePoll } from "../actions";
+import { Banner } from "../banner";
 import { StatusBadge } from "../status-badge";
+import { WeightingTab } from "./weighting-tab";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ type SearchParams = Record<string, string | undefined>;
 const TABS = [
   ["results", "Results"],
   ["calls", "Calls"],
+  ["weighting", "Weighting"],
   ["setup", "Setup"],
 ] as const;
 
@@ -78,7 +80,14 @@ export default async function PollPage({
         <Banner tone="error">{searchParams.error}</Banner>
       )}
 
-      {tab === "results" && <ResultsTab poll={poll} includePartial={searchParams.include === "partial"} />}
+      {tab === "results" && (
+        <ResultsTab
+          poll={poll}
+          includePartial={searchParams.include === "partial"}
+          weighted={searchParams.weights !== "off"}
+        />
+      )}
+      {tab === "weighting" && <WeightingTab poll={poll} searchParams={searchParams} />}
       {tab === "calls" && <CallsTab poll={poll} searchParams={searchParams} />}
       {tab === "setup" && <SetupTab poll={poll} saved={searchParams.saved === "1"} />}
     </div>
@@ -90,26 +99,26 @@ export default async function PollPage({
 async function ResultsTab({
   poll,
   includePartial,
+  weighted,
 }: {
   poll: Poll;
   includePartial: boolean;
+  weighted: boolean;
 }): Promise<JSX.Element> {
   const calls = await prisma.pollCall.findMany({
     where: { pollId: poll.id },
     select: { outcome: true, durationMs: true, analysis: true },
   });
   const stats = computeStats(calls);
-  // Calls still in progress are left out until their analysis arrives.
-  const outcome = includePartial ? { not: "IN_PROGRESS" as const } : { equals: "COMPLETED" as const };
-  const responses = await prisma.pollResponse.findMany({
-    where: { pollCall: { pollId: poll.id, outcome } },
-    select: { questionId: true, answer: true },
-  });
-  const tallies = tallyResponses(
-    responses,
-    parseQuestionText((poll.variables ?? {}) as Record<string, unknown>)
-  );
+  const { config, weighting, tallies } = await loadPollResults(poll, { includePartial, weighted });
   const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : "—");
+  const link = (overrides: { include?: boolean; weights?: boolean }) => {
+    const q = new URLSearchParams({ tab: "results" });
+    if (overrides.include ?? includePartial) q.set("include", "partial");
+    if (!(overrides.weights ?? weighted)) q.set("weights", "off");
+    return `/admin/polls/${poll.id}?${q}`;
+  };
+  const canWeight = config.enabled && config.targets.some((t) => t.categories.length >= 2);
 
   return (
     <div className="space-y-8">
@@ -156,10 +165,12 @@ async function ResultsTab({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Answers</h2>
         <div className="flex items-center gap-3 text-sm">
-          <Link
-            href={`/admin/polls/${poll.id}?tab=results${includePartial ? "" : "&include=partial"}`}
-            className="text-sea-deep hover:underline"
-          >
+          {canWeight && (
+            <Link href={link({ weights: !weighted })} className="text-sea-deep hover:underline">
+              {weighted ? "Show unweighted" : "Show weighted"}
+            </Link>
+          )}
+          <Link href={link({ include: !includePartial })} className="text-sea-deep hover:underline">
             {includePartial ? "Completed interviews only" : "Include partial interviews"}
           </Link>
           <a href={`/admin/polls/${poll.id}/export`} className="btn-secondary px-3 py-1.5">
@@ -167,9 +178,34 @@ async function ResultsTab({
           </a>
         </div>
       </div>
-      <p className="-mt-6 text-xs text-ink/50">
-        Unweighted counts from {includePartial ? "all interviews with answers" : "completed interviews"}.
-      </p>
+      <div className="-mt-6 space-y-1 text-xs text-ink/50">
+        {weighting ? (
+          <p>
+            Weighted to {config.targets.filter((t) => t.categories.length >= 2).map((t) => t.label).join(" × ")}{" "}
+            · {weighting.n.toLocaleString()} {includePartial ? "interviews" : "completed interviews"} · effective
+            sample {Math.round(weighting.effectiveN).toLocaleString()} · margin of error ±
+            {weighting.marginOfError.toFixed(1)} points.{" "}
+            <Link href={`/admin/polls/${poll.id}?tab=weighting`} className="text-sea-deep hover:underline">
+              Details
+            </Link>
+          </p>
+        ) : (
+          <p>
+            Unweighted counts from {includePartial ? "all interviews with answers" : "completed interviews"}.
+            {!canWeight && (
+              <>
+                {" "}
+                <Link href={`/admin/polls/${poll.id}?tab=weighting`} className="text-sea-deep hover:underline">
+                  Set up weighting
+                </Link>
+              </>
+            )}
+          </p>
+        )}
+        {weighting?.warnings.map((w) => (
+          <p key={w} className="text-accent-deep">{w}</p>
+        ))}
+      </div>
 
       {tallies.length === 0 ? (
         <div className="card text-sm text-ink/60">No answers yet.</div>
@@ -188,13 +224,14 @@ async function ResultsTab({
                     <div className="flex justify-between gap-4">
                       <span className="text-ink/80">{a.answer}</span>
                       <span className="shrink-0 tabular-nums text-ink/60">
-                        {a.count} · {pct(a.count, t.total)}
+                        <span className="text-ink/40">n={a.count}</span> ·{" "}
+                        <span className="font-medium text-ink/80">{pct(a.weight, t.totalWeight)}</span>
                       </span>
                     </div>
                     <div className="mt-1 h-1.5 rounded-full bg-sea-mist">
                       <div
                         className="h-1.5 rounded-full bg-sea"
-                        style={{ width: `${(a.count / t.total) * 100}%` }}
+                        style={{ width: `${t.totalWeight ? (a.weight / t.totalWeight) * 100 : 0}%` }}
                       />
                     </div>
                   </li>
@@ -658,18 +695,6 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
-function Banner({ tone, children }: { tone: "ok" | "error"; children: React.ReactNode }): JSX.Element {
-  return (
-    <div
-      className={cn(
-        "rounded-xl px-4 py-3 text-sm",
-        tone === "ok" ? "bg-sea-mist text-sea-deep" : "bg-accent/15 text-accent-deep"
-      )}
-    >
-      {children}
-    </div>
-  );
-}
 
 const OUTCOME_TONE: Partial<Record<PollCallOutcome, string>> = {
   COMPLETED: "bg-sea-mist text-sea-deep",
