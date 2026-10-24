@@ -87,6 +87,10 @@ model Tenant {
   facts              Fact[]
   apiUsage           ApiUsage[]
   integrationEvents  IntegrationEvent[]
+  polls              Poll[]
+  pollCalls          PollCall[]
+  doNotCall          DoNotCall[]
+  pollCallbacks      PollCallback[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 }
@@ -187,4 +191,132 @@ enum IntegrationEventStatus {
   QUEUED
   SENT
   FAILED
+}
+
+// --- Polling (Retell voice agents) -------------------------------
+// Answers are stored against the call, never against a phone number.
+// Numbers are only kept as an HMAC (phoneHash) except where we must
+// dial back (PollCallback).
+
+model Poll {
+  id             String         @id @default(cuid())
+  tenantId       String
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name           String
+  status         PollStatus     @default(DRAFT)
+  retellAgentId  String?        // overrides RETELL_AGENT_ID for this poll
+  fromNumber     String?        // overrides RETELL_FROM_NUMBER for this poll
+  // Retell dynamic variables injected into the prompt on every call:
+  // poll_name, poll_topic, screening_questions, survey_questions, ...
+  variables      Json           @default("{}")
+  calls          PollCall[]
+  callbacks      PollCallback[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([tenantId, status])
+  @@index([retellAgentId])
+}
+
+enum PollStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+model PollCall {
+  id                  String          @id @default(cuid())
+  tenantId            String
+  tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pollId              String
+  poll                Poll            @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  retellCallId        String          @unique
+  retellAgentId       String
+  direction           String
+  phoneHash           String
+  callStatus          String
+  outcome             PollCallOutcome @default(IN_PROGRESS)
+  consentGiven        Boolean?
+  completed           Boolean         @default(false)
+  lastQuestionReached String?
+  disconnectionReason String?
+  durationMs          Int?
+  startedAt           DateTime?
+  endedAt             DateTime?
+  summary             String?         @db.Text
+  sentiment           String?
+  callSuccessful      Boolean?
+  inVoicemail         Boolean?
+  // Raw custom_analysis_data from Retell, kept for QA and re-processing.
+  analysis            Json?
+  responses           PollResponse[]
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([pollId, outcome])
+  @@index([tenantId, createdAt])
+}
+
+enum PollCallOutcome {
+  IN_PROGRESS
+  COMPLETED
+  PARTIAL
+  REFUSED
+  SCREENED_OUT
+  CALLBACK_REQUESTED
+  DO_NOT_CALL
+  VOICEMAIL
+  NO_ANSWER
+  WRONG_NUMBER_OR_LANGUAGE
+  HOSTILE
+  DISTRESSED
+  NO_CONVERSATION
+}
+
+model PollResponse {
+  id         String   @id @default(cuid())
+  pollCallId String
+  pollCall   PollCall @relation(fields: [pollCallId], references: [id], onDelete: Cascade)
+  questionId String   // e.g. "S1", "Q3", "D2"
+  answer     String   @db.Text
+  verbatim   String?  @db.Text
+  source     String   @default("function") // "function" (live) or "analysis" (post-call)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([pollCallId, questionId])
+}
+
+model DoNotCall {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  phoneHash String
+  reason    String?
+  source    String   // "function" | "analysis" | "manual"
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, phoneHash])
+}
+
+model PollCallback {
+  id             String             @id @default(cuid())
+  tenantId       String
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pollId         String
+  poll           Poll               @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  retellCallId   String             @unique
+  phoneNumber    String             // needed to dial back; delete once DONE
+  preferredTime  String             // as the respondent said it, e.g. "tomorrow after 6"
+  status         PollCallbackStatus @default(PENDING)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([tenantId, status])
+}
+
+enum PollCallbackStatus {
+  PENDING
+  DONE
+  CANCELLED
 }

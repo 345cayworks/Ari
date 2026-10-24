@@ -84,6 +84,22 @@ In production, Netlify gives you the URL directly.
 6. Set `NEXTAUTH_URL=https://<your-site>.netlify.app`
 7. Register Telegram webhook to `https://<your-site>.netlify.app/api/telegram/webhook/<TELEGRAM_WEBHOOK_SECRET>`
 
+## Polling (Retell voice agents)
+
+AI interviewers on Retell call respondents, read a poll's questions and record answers here.
+
+- **In-call functions** at `/api/retell/functions`: `record_answer` (saves each answer as it's given, so a dropped call still keeps its partial answers), `add_to_do_not_call` and `schedule_callback`. Retell's built-in `end_call` is always added, and `transfer_call` too when `RETELL_TRANSFER_NUMBER` is set.
+- **Post-call analysis** at `/api/retell/webhook`: on `call_analyzed`, saves the outcome, consent, quality flags (whether the agent deviated from the script, how well the two understood each other) and the summary. `answers_json` only fills questions that `record_answer` missed.
+- Tools and analysis fields are defined in `lib/polling/config.ts`, and the agent prompt is in `retell/poll-agent-prompt.md`.
+- Phone numbers are stored only as an HMAC (`PHONE_HASH_SECRET`). The exception is callbacks, which need the real number to dial back.
+
+Setup:
+
+1. Set the `RETELL_*`, `PUBLIC_BASE_URL` and `PHONE_HASH_SECRET` env vars (see `.env.example`), then run `npx prisma migrate dev --name polling`.
+2. Run `npm run retell:sync` to push the tools, analysis fields and webhook URL to `RETELL_AGENT_ID`. Add `--prompt` to also replace the agent's prompt, or `--dry-run` to preview. Tools and fields you added yourself in Retell are kept.
+3. Create a `Poll` row with `status = ACTIVE` and its dynamic variables (`poll_name`, `survey_questions`, ...) in `variables`. Give each question an ID like `Q1`.
+4. Place calls with `placePollCall(pollId, number)` from `lib/polling/calls.ts`. It refuses numbers on the do-not-call list and tags each call with the poll's ID. For dashboard test calls, pass `poll_id` as a dynamic variable or set `Poll.retellAgentId`.
+
 ## Roadmap
 
 | Phase | Deliverable |
