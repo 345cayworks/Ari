@@ -30,7 +30,17 @@ function toDate(ms?: number): Date | undefined {
   return ms ? new Date(ms) : undefined;
 }
 
+// Only link batches that belong to this poll, so stray metadata can't
+// break the foreign key.
+async function batchIdFor(call: RetellCall, poll: Poll): Promise<string | undefined> {
+  const id = call.metadata?.batch_id;
+  if (typeof id !== "string") return undefined;
+  const batch = await prisma.pollBatch.findFirst({ where: { id, pollId: poll.id }, select: { id: true } });
+  return batch?.id;
+}
+
 export async function upsertPollCall(call: RetellCall, poll: Poll) {
+  const batchId = await batchIdFor(call, poll);
   const live = {
     callStatus: call.call_status,
     startedAt: toDate(call.start_timestamp),
@@ -46,6 +56,7 @@ export async function upsertPollCall(call: RetellCall, poll: Poll) {
       tenantId: poll.tenantId,
       pollId: poll.id,
       retellCallId: call.call_id,
+      batchId,
       retellAgentId: call.agent_id,
       direction: call.direction ?? "outbound",
       phoneHash: hashPhone(respondentNumber(call)),
@@ -249,29 +260,190 @@ export async function handleWebhookEvent(event: string, call: RetellCall): Promi
 
 export class DoNotCallError extends Error {}
 
-export async function placePollCall(pollId: string, toNumber: string): Promise<{ call_id: string }> {
-  const poll = await prisma.poll.findUniqueOrThrow({ where: { id: pollId } });
+// Cayman has no daylight saving, so this is always UTC-5.
+export const POLL_TIMEZONE = "America/Cayman";
+// Tasks per Retell batch request. Each task carries the whole script as
+// dynamic variables, so this keeps request bodies to a few MB.
+const RETELL_BATCH_CHUNK = 1000;
+
+function requireActive(poll: Poll): void {
   if (poll.status !== "ACTIVE") {
     throw new Error(`Poll ${poll.id} is ${poll.status}, not ACTIVE`);
   }
+}
+
+function fromNumberFor(poll: Poll): string {
+  const fromNumber = poll.fromNumber ?? process.env.RETELL_FROM_NUMBER;
+  if (!fromNumber) throw new Error("Set RETELL_FROM_NUMBER or Poll.fromNumber");
+  return fromNumber;
+}
+
+// One outbound call, in the shape both create-phone-call and batch tasks take.
+function callTask(poll: Poll, toNumber: string, batchId?: string) {
+  const variables = Object.fromEntries(
+    Object.entries((poll.variables ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+  );
+  return {
+    to_number: normalizePhone(toNumber),
+    override_agent_id: poll.retellAgentId ?? process.env.RETELL_AGENT_ID,
+    metadata: { tenant_id: poll.tenantId, poll_id: poll.id, ...(batchId ? { batch_id: batchId } : {}) },
+    retell_llm_dynamic_variables: { ...variables, poll_id: poll.id },
+  };
+}
+
+export async function placePollCall(pollId: string, toNumber: string): Promise<{ call_id: string }> {
+  const poll = await prisma.poll.findUniqueOrThrow({ where: { id: pollId } });
+  requireActive(poll);
   const phoneHash = hashPhone(toNumber);
   const blocked = await prisma.doNotCall.findUnique({
     where: { tenantId_phoneHash: { tenantId: poll.tenantId, phoneHash } },
   });
   if (blocked) throw new DoNotCallError("Number is on the do-not-call list");
 
-  const fromNumber = poll.fromNumber ?? process.env.RETELL_FROM_NUMBER;
-  if (!fromNumber) throw new Error("Set RETELL_FROM_NUMBER or Poll.fromNumber");
+  return retellApi("POST", "/v2/create-phone-call", {
+    from_number: fromNumberFor(poll),
+    ...callTask(poll, toNumber),
+  });
+}
 
-  const variables = Object.fromEntries(
-    Object.entries((poll.variables ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+// Hashes from `hashes` that are present in a table, queried in chunks to
+// stay under Postgres' bind-parameter limit.
+async function existingHashes(
+  hashes: string[],
+  find: (chunk: string[]) => Promise<{ phoneHash: string }[]>
+): Promise<Set<string>> {
+  const found = new Set<string>();
+  for (const part of chunk(hashes, 5000)) {
+    for (const row of await find(part)) found.add(row.phoneHash);
+  }
+  return found;
+}
+
+export interface BatchOptions {
+  name: string;
+  windowStart: number; // minutes since midnight, Cayman time
+  windowEnd: number;
+  days: string[];
+  startsAt?: Date;
+  skipAlreadyCalled: boolean;
+  reservedConcurrency?: number;
+}
+
+export interface BatchResult {
+  batchId: string | null;
+  submitted: number;
+  skippedDnc: number;
+  skippedCalled: number;
+  skippedInvalid: number;
+  error?: string;
+}
+
+export async function createPollBatch(
+  pollId: string,
+  rawNumbers: string[],
+  opts: BatchOptions
+): Promise<BatchResult> {
+  const poll = await prisma.poll.findUniqueOrThrow({ where: { id: pollId } });
+  requireActive(poll);
+  if (!(opts.windowStart >= 0 && opts.windowStart < opts.windowEnd && opts.windowEnd <= 1440)) {
+    throw new Error("Calling window must start before it ends, within one day");
+  }
+
+  const byHash = new Map<string, string>();
+  for (const raw of rawNumbers) {
+    if (raw.replace(/\D/g, "").length < 7) continue;
+    const number = normalizePhone(raw);
+    if (!/^\+\d{8,15}$/.test(number)) continue;
+    byHash.set(hashPhone(number), number);
+  }
+  const skippedInvalid = rawNumbers.length - byHash.size;
+  const hashes = [...byHash.keys()];
+
+  const dnc = await existingHashes(hashes, (part) =>
+    prisma.doNotCall.findMany({
+      where: { tenantId: poll.tenantId, phoneHash: { in: part } },
+      select: { phoneHash: true },
+    })
+  );
+  const called = opts.skipAlreadyCalled
+    ? await existingHashes(hashes, (part) =>
+        prisma.pollCall.findMany({
+          where: { pollId: poll.id, phoneHash: { in: part } },
+          select: { phoneHash: true },
+          distinct: ["phoneHash"],
+        })
+      )
+    : new Set<string>();
+
+  const eligible = hashes.filter((h) => !dnc.has(h) && !called.has(h)).map((h) => byHash.get(h)!);
+  const result: BatchResult = {
+    batchId: null,
+    submitted: 0,
+    skippedDnc: hashes.filter((h) => dnc.has(h)).length,
+    skippedCalled: hashes.filter((h) => !dnc.has(h) && called.has(h)).length,
+    skippedInvalid,
+  };
+  if (eligible.length === 0) {
+    result.error = "No numbers left to call after removing invalid, do-not-call and already-called numbers.";
+    return result;
+  }
+
+  const fromNumber = fromNumberFor(poll);
+  const batch = await prisma.pollBatch.create({
+    data: {
+      tenantId: poll.tenantId,
+      pollId: poll.id,
+      name: opts.name,
+      retellBatchIds: [],
+      submittedCount: 0,
+      skippedDnc: result.skippedDnc,
+      skippedCalled: result.skippedCalled,
+      skippedInvalid,
+      startsAt: opts.startsAt,
+      windowStart: opts.windowStart,
+      windowEnd: opts.windowEnd,
+      days: opts.days,
+    },
+  });
+  result.batchId = batch.id;
+
+  const parts = chunk(eligible, RETELL_BATCH_CHUNK);
+  const sent = await Promise.allSettled(
+    parts.map((numbers, i) =>
+      retellApi<{ batch_call_id: string }>("POST", "/create-batch-call", {
+        name: `${poll.name} – ${opts.name}${parts.length > 1 ? ` (${i + 1}/${parts.length})` : ""}`,
+        from_number: fromNumber,
+        tasks: numbers.map((n) => callTask(poll, n, batch.id)),
+        trigger_timestamp: opts.startsAt?.getTime(),
+        call_time_window: {
+          windows: [{ start: opts.windowStart, end: opts.windowEnd }],
+          ...(opts.days.length ? { day: opts.days } : {}),
+          timezone: POLL_TIMEZONE,
+        },
+        ...(opts.reservedConcurrency ? { reserved_concurrency: opts.reservedConcurrency } : {}),
+      }).then((res) => ({ id: res.batch_call_id, count: numbers.length }))
+    )
   );
 
-  return retellApi("POST", "/v2/create-phone-call", {
-    from_number: fromNumber,
-    to_number: normalizePhone(toNumber),
-    override_agent_id: poll.retellAgentId ?? process.env.RETELL_AGENT_ID,
-    metadata: { tenant_id: poll.tenantId, poll_id: poll.id },
-    retell_llm_dynamic_variables: { ...variables, poll_id: poll.id },
+  const ok = sent.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  const failures = sent.flatMap((r) => (r.status === "rejected" ? [String(r.reason?.message ?? r.reason)] : []));
+  result.submitted = ok.reduce((n, r) => n + r.count, 0);
+  if (failures.length) result.error = failures[0].slice(0, 300);
+
+  await prisma.pollBatch.update({
+    where: { id: batch.id },
+    data: {
+      retellBatchIds: ok.map((r) => r.id),
+      submittedCount: result.submitted,
+      status: failures.length === 0 ? "SENT" : ok.length ? "PARTIAL" : "FAILED",
+      error: result.error,
+    },
   });
+  return result;
 }

@@ -98,7 +98,9 @@ Setup:
 1. Set the `RETELL_*`, `PUBLIC_BASE_URL` and `PHONE_HASH_SECRET` env vars (see `.env.example`), then run `npx prisma migrate dev --name polling`.
 2. Run `npm run retell:sync` to push the tools, analysis fields and webhook URL to `RETELL_AGENT_ID`. Add `--prompt` to also replace the agent's prompt, or `--dry-run` to preview. Tools and fields you added yourself in Retell are kept.
 3. In **Admin → Polls**, create a poll, write its questions on the Setup tab (each starting with an ID like `Q1.` and ending with its options in brackets), then activate it.
-4. On the Calls tab, paste up to 20 numbers per batch to place calls. Numbers on the do-not-call list are skipped. The same tab lists callback requests and recent calls with their answers and quality flags.
+4. On the Calls tab, send a **batch** by pasting numbers or uploading a CSV (up to 5,000 per batch). Choose calling hours and days in Cayman time and an optional start time. Retell dials only within that window. Do-not-call numbers, duplicates and (by default) anyone already called for this poll are removed first, and each batch shows how many of its numbers have been dialled and completed. "Call now" dials up to 20 numbers immediately, for tests. The same tab lists callback requests and recent calls with their answers and quality flags.
+
+   To reach +1 345 numbers, `RETELL_FROM_NUMBER` must be a number **imported** into Retell over a SIP trunk (e.g. Twilio or Telnyx). Numbers bought from Retell can only call US numbers.
 5. The Results tab tallies answers per question (unweighted) and exports a CSV with one row per call and no phone numbers.
 
 Calls can also be placed in code with `placePollCall(pollId, number)` from `lib/polling/calls.ts`. For test calls from the Retell dashboard, pass `poll_id` as a dynamic variable, or set the poll's Retell agent ID.

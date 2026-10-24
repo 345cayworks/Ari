@@ -9,12 +9,15 @@ import {
   computeStats,
   formatOutcome,
   formatSeconds,
+  MAX_BATCH_NUMBERS,
   MAX_CALLS_PER_SUBMIT,
+  minutesToTime,
   parseQuestionText,
   POLL_VARIABLES,
   tallyResponses,
+  WEEKDAYS,
 } from "@/lib/polling/results";
-import { placeCalls, resolveCallback, setPollStatus, updatePoll } from "../actions";
+import { createBatch, placeCalls, resolveCallback, setPollStatus, updatePoll } from "../actions";
 import { StatusBadge } from "../status-badge";
 
 export const dynamic = "force-dynamic";
@@ -219,7 +222,7 @@ async function CallsTab({
   poll: Poll;
   searchParams: SearchParams;
 }): Promise<JSX.Element> {
-  const [callbacks, calls] = await Promise.all([
+  const [callbacks, calls, batches, batchOutcomes] = await Promise.all([
     prisma.pollCallback.findMany({
       where: { pollId: poll.id, status: "PENDING" },
       orderBy: { createdAt: "asc" },
@@ -230,8 +233,26 @@ async function CallsTab({
       take: 100,
       include: { responses: true },
     }),
+    prisma.pollBatch.findMany({
+      where: { pollId: poll.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    prisma.pollCall.groupBy({
+      by: ["batchId", "outcome"],
+      where: { pollId: poll.id, batchId: { not: null } },
+      _count: { _all: true },
+    }),
   ]);
   const placed = searchParams.placed !== undefined;
+  const batchProgress = new Map<string, { calls: number; completed: number }>();
+  for (const row of batchOutcomes) {
+    const p = batchProgress.get(row.batchId!) ?? { calls: 0, completed: 0 };
+    p.calls += row._count._all;
+    if (row.outcome === "COMPLETED") p.completed += row._count._all;
+    batchProgress.set(row.batchId!, p);
+  }
+  const active = poll.status === "ACTIVE";
 
   return (
     <div className="space-y-8">
@@ -247,23 +268,162 @@ async function CallsTab({
         </Banner>
       )}
 
+      {searchParams.batchSent !== undefined && (
+        <Banner tone={searchParams.error ? "error" : "ok"}>
+          {Number(searchParams.batchSent).toLocaleString()} number(s) sent to Retell batch calling
+          {Number(searchParams.batchDnc) ? `, ${searchParams.batchDnc} skipped (do not call)` : ""}
+          {Number(searchParams.batchCalled) ? `, ${searchParams.batchCalled} skipped (already called)` : ""}
+          {Number(searchParams.batchInvalid) ? `, ${searchParams.batchInvalid} invalid or duplicate` : ""}
+          .
+        </Banner>
+      )}
+
+      {!active && (
+        <p className="text-sm text-accent-deep">
+          Activate this poll on the Setup tab before placing calls.
+        </p>
+      )}
+
+      <form key={`b${searchParams.batch}`} action={createBatch} className="card space-y-5">
+        <input type="hidden" name="pollId" value={poll.id} />
+        <div>
+          <h2 className="text-lg font-semibold">Batch calling</h2>
+          <p className="mt-1 text-sm text-ink/60">
+            Paste numbers or upload a CSV (the first column with a phone number is used), up to{" "}
+            {MAX_BATCH_NUMBERS.toLocaleString()} per batch. Retell dials them only within the hours
+            and days below, in Cayman time. Seven-digit numbers are treated as +1 345.
+          </p>
+        </div>
+        <div>
+          <label className="label" htmlFor="batch-name">Batch name</label>
+          <input id="batch-name" name="name" className="input" placeholder="West Bay sample, wave 1" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="batch-numbers">Numbers</label>
+            <textarea id="batch-numbers" name="numbers" rows={5} className="input font-mono" placeholder={"345 555 1234\n+1 345 555 9876"} />
+          </div>
+          <div>
+            <label className="label" htmlFor="batch-file">Or upload CSV / TXT</label>
+            <input
+              id="batch-file"
+              name="file"
+              type="file"
+              accept=".csv,.txt,text/csv,text/plain"
+              className="block w-full text-sm text-ink/70 file:mr-3 file:rounded-lg file:border-0 file:bg-sand-warm file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
+            />
+          </div>
+        </div>
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3">
+          <div>
+            <label className="label" htmlFor="windowStart">Call from</label>
+            <input id="windowStart" name="windowStart" type="time" className="input" defaultValue="09:00" required />
+          </div>
+          <div>
+            <label className="label" htmlFor="windowEnd">Until</label>
+            <input id="windowEnd" name="windowEnd" type="time" className="input" defaultValue="20:00" required />
+          </div>
+          <div className="col-span-2 sm:col-span-1">
+            <label className="label" htmlFor="startsAt">Start (optional)</label>
+            <input id="startsAt" name="startsAt" type="datetime-local" className="input" />
+          </div>
+        </div>
+        <fieldset>
+          <legend className="label">Days</legend>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {WEEKDAYS.map((d) => (
+              <label key={d} className="flex items-center gap-1.5 text-sm">
+                <input type="checkbox" name="days" value={d} defaultChecked={d !== "Sunday"} className="h-4 w-4 rounded border-ink/20" />
+                {d.slice(0, 3)}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="skipAlreadyCalled" defaultChecked className="h-4 w-4 rounded border-ink/20" />
+          Skip numbers already called for this poll
+        </label>
+        <details className="text-sm">
+          <summary className="cursor-pointer text-ink/60">Advanced</summary>
+          <div className="mt-3 max-w-xs">
+            <label className="label" htmlFor="reservedConcurrency">Lines kept free for other calls</label>
+            <input id="reservedConcurrency" name="reservedConcurrency" type="number" min={0} className="input" placeholder="0" />
+            <p className="mt-1 text-xs text-ink/50">
+              Retell holds this many concurrent calls back from the batch, e.g. for callbacks.
+            </p>
+          </div>
+        </details>
+        <p className="text-xs text-ink/50">
+          To reach +1 345 numbers, the caller number must be imported into Retell (SIP trunk).
+          Numbers bought from Retell can only call US numbers.
+        </p>
+        <button className="btn-primary" type="submit" disabled={!active}>Send batch</button>
+      </form>
+
+      {batches.length > 0 && (
+        <section>
+          <h2 className="text-lg font-semibold mb-3">Batches</h2>
+          <div className="card p-0 divide-y divide-ink/5">
+            {batches.map((b) => {
+              const p = batchProgress.get(b.id) ?? { calls: 0, completed: 0 };
+              const skipped = b.skippedDnc + b.skippedCalled + b.skippedInvalid;
+              return (
+                <div key={b.id} className="px-6 py-4 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium">{b.name}</span>
+                      {b.status !== "SENT" && (
+                        <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent-deep">
+                          {b.status === "FAILED" ? "failed" : "partly sent"}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-xs text-ink/40">{formatRelative(b.createdAt)}</span>
+                  </div>
+                  <p className="text-xs text-ink/60">
+                    {b.submittedCount.toLocaleString()} sent
+                    {skipped ? ` · ${skipped.toLocaleString()} skipped` : ""} ·{" "}
+                    {minutesToTime(b.windowStart)}–{minutesToTime(b.windowEnd)}{" "}
+                    {b.days.length ? b.days.map((d) => d.slice(0, 3)).join(", ") : "every day"}
+                    {b.startsAt
+                      ? ` · from ${b.startsAt.toLocaleString("en-GB", { timeZone: "America/Cayman", dateStyle: "medium", timeStyle: "short" })}`
+                      : ""}
+                  </p>
+                  {b.submittedCount > 0 && (
+                    <div>
+                      <div className="h-1.5 rounded-full bg-sea-mist">
+                        <div
+                          className="h-1.5 rounded-full bg-sea"
+                          style={{ width: `${Math.min(100, (p.calls / b.submittedCount) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-ink/50">
+                        {p.calls.toLocaleString()} of {b.submittedCount.toLocaleString()} dialled ·{" "}
+                        {p.completed.toLocaleString()} completed
+                      </p>
+                    </div>
+                  )}
+                  {b.error && <p className="text-xs text-accent-deep">{b.error}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <form key={searchParams.batch} action={placeCalls} className="card space-y-4">
         <input type="hidden" name="pollId" value={poll.id} />
         <div>
-          <h2 className="text-lg font-semibold">Place calls</h2>
+          <h2 className="text-lg font-semibold">Call now</h2>
           <p className="mt-1 text-sm text-ink/60">
-            One number per line, up to {MAX_CALLS_PER_SUBMIT} at a time. Seven-digit numbers are
-            treated as +1 345. Numbers on the do-not-call list are skipped automatically.
+            Dial straight away, ignoring calling hours. Useful for test calls. Up to{" "}
+            {MAX_CALLS_PER_SUBMIT} numbers, one per line. Numbers on the do-not-call list are skipped.
           </p>
         </div>
-        {poll.status !== "ACTIVE" ? (
-          <p className="text-sm text-accent-deep">
-            Activate this poll on the Setup tab before placing calls.
-          </p>
-        ) : (
+        {active && (
           <>
-            <textarea name="numbers" rows={5} className="input font-mono" placeholder={"345 555 1234\n+1 345 555 9876"} required />
-            <button className="btn-primary" type="submit">Call these numbers</button>
+            <textarea name="numbers" rows={3} className="input font-mono" placeholder={"345 555 1234"} required />
+            <button className="btn-secondary" type="submit">Call these numbers</button>
           </>
         )}
       </form>

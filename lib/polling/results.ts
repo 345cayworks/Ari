@@ -3,6 +3,15 @@ import type { PollCall, PollCallOutcome, PollResponse } from "@prisma/client";
 // Calls are placed one by one inside a server action, which Netlify times
 // out quickly; larger lists need Retell batch calling.
 export const MAX_CALLS_PER_SUBMIT = 20;
+// Numbers per batch submission. Each 1,000 becomes one Retell batch request,
+// sent in parallel, which keeps the server action well inside its time limit.
+export const MAX_BATCH_NUMBERS = 5000;
+
+export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
+
+export function minutesToTime(m: number): string {
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
 
 // Dynamic variables an admin edits per poll, in the order the prompt uses them.
 export const POLL_VARIABLES = [

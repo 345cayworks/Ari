@@ -5,9 +5,14 @@ import { revalidatePath } from "next/cache";
 import { PollStatus, Role } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { DoNotCallError, placePollCall } from "@/lib/polling/calls";
+import { createPollBatch, DoNotCallError, placePollCall } from "@/lib/polling/calls";
 import { normalizePhone } from "@/lib/polling/phone";
-import { MAX_CALLS_PER_SUBMIT, POLL_VARIABLES } from "@/lib/polling/results";
+import {
+  MAX_BATCH_NUMBERS,
+  MAX_CALLS_PER_SUBMIT,
+  POLL_VARIABLES,
+  WEEKDAYS,
+} from "@/lib/polling/results";
 
 async function requireTenant(): Promise<string> {
   const session = await auth();
@@ -124,6 +129,77 @@ export async function placeCalls(formData: FormData): Promise<void> {
   if (result.error) q.set("error", result.error);
   revalidatePath(`/admin/polls/${poll.id}`);
   redirect(`/admin/polls/${poll.id}?${q}`);
+}
+
+function parseTime(value: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value);
+  if (!m) return null;
+  const minutes = Number(m[1]) * 60 + Number(m[2]);
+  return minutes <= 1440 ? minutes : null;
+}
+
+// Pull one phone number per line from pasted text or a CSV/TXT upload:
+// the first cell with at least 7 digits. Header rows have none, so drop out.
+function extractNumbers(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.split(/[,;\t]/).find((cell) => cell.replace(/\D/g, "").length >= 7))
+    .filter((cell): cell is string => Boolean(cell))
+    .map((cell) => cell.replace(/^["']|["']$/g, "").trim());
+}
+
+export async function createBatch(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const back = (params: Record<string, string>) =>
+    redirect(`/admin/polls/${poll.id}?${new URLSearchParams({ tab: "calls", ...params })}`);
+
+  let text = field(formData, "numbers");
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) text += "\n" + (await file.text());
+  const numbers = extractNumbers(text);
+  if (numbers.length === 0) back({ error: "No phone numbers found." });
+  if (numbers.length > MAX_BATCH_NUMBERS) {
+    back({ error: `${numbers.length.toLocaleString()} numbers found; the limit is ${MAX_BATCH_NUMBERS.toLocaleString()} per batch. Split the list.` });
+  }
+
+  const windowStart = parseTime(field(formData, "windowStart"));
+  const windowEnd = parseTime(field(formData, "windowEnd"));
+  if (windowStart === null || windowEnd === null || windowStart >= windowEnd) {
+    back({ error: "Calling hours must start before they end." });
+  }
+  const days = formData.getAll("days").map(String).filter((d) => (WEEKDAYS as readonly string[]).includes(d));
+  if (days.length === 0) back({ error: "Pick at least one calling day." });
+
+  // datetime-local has no zone; it is entered in Cayman time (UTC-5, no DST).
+  const startsAtRaw = field(formData, "startsAt");
+  const startsAt = startsAtRaw ? new Date(`${startsAtRaw}:00-05:00`) : undefined;
+  if (startsAt && Number.isNaN(startsAt.getTime())) back({ error: "Invalid start time." });
+
+  const reserved = Number(field(formData, "reservedConcurrency"));
+  let result;
+  try {
+    result = await createPollBatch(poll.id, numbers, {
+      name: field(formData, "name") || `Batch ${new Date().toISOString().slice(0, 10)}`,
+      windowStart: windowStart!,
+      windowEnd: windowEnd!,
+      days: days.length === WEEKDAYS.length ? [] : days,
+      startsAt,
+      skipAlreadyCalled: formData.get("skipAlreadyCalled") === "on",
+      reservedConcurrency: Number.isInteger(reserved) && reserved > 0 ? reserved : undefined,
+    });
+  } catch (err) {
+    back({ error: err instanceof Error ? err.message.slice(0, 300) : String(err) });
+  }
+
+  revalidatePath(`/admin/polls/${poll.id}`);
+  back({
+    batchSent: String(result!.submitted),
+    batchDnc: String(result!.skippedDnc),
+    batchCalled: String(result!.skippedCalled),
+    batchInvalid: String(result!.skippedInvalid),
+    ...(result!.error ? { error: result!.error } : {}),
+    batch: String(Date.now()),
+  });
 }
 
 export async function resolveCallback(formData: FormData): Promise<void> {

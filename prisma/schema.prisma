@@ -91,6 +91,7 @@ model Tenant {
   pollCalls          PollCall[]
   doNotCall          DoNotCall[]
   pollCallbacks      PollCallback[]
+  pollBatches        PollBatch[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 }
@@ -211,6 +212,7 @@ model Poll {
   variables      Json           @default("{}")
   calls          PollCall[]
   callbacks      PollCallback[]
+  batches        PollBatch[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -231,6 +233,8 @@ model PollCall {
   pollId              String
   poll                Poll            @relation(fields: [pollId], references: [id], onDelete: Cascade)
   retellCallId        String          @unique
+  batchId             String?
+  batch               PollBatch?      @relation(fields: [batchId], references: [id], onDelete: SetNull)
   retellAgentId       String
   direction           String
   phoneHash           String
@@ -255,6 +259,7 @@ model PollCall {
 
   @@index([pollId, outcome])
   @@index([tenantId, createdAt])
+  @@index([batchId])
 }
 
 enum PollCallOutcome {
@@ -319,4 +324,37 @@ enum PollCallbackStatus {
   PENDING
   DONE
   CANCELLED
+}
+
+// A list of numbers sent to Retell batch calling. Large lists are split
+// into several Retell batches (retellBatchIds).
+model PollBatch {
+  id               String          @id @default(cuid())
+  tenantId         String
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pollId           String
+  poll             Poll            @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  name             String
+  status           PollBatchStatus @default(SENT)
+  retellBatchIds   String[]
+  submittedCount   Int             // numbers sent to Retell
+  skippedDnc       Int             @default(0)
+  skippedCalled    Int             @default(0) // already called for this poll
+  skippedInvalid   Int             @default(0) // unparseable or duplicate
+  startsAt         DateTime?       // null = as soon as Retell picks it up
+  // Calling window in Cayman local time, minutes since midnight.
+  windowStart      Int
+  windowEnd        Int
+  days             String[]        // e.g. ["Monday", ...]; empty = every day
+  error            String?
+  calls            PollCall[]
+  createdAt        DateTime        @default(now())
+
+  @@index([pollId, createdAt])
+}
+
+enum PollBatchStatus {
+  SENT
+  PARTIAL // some chunks failed to send, see error
+  FAILED
 }
