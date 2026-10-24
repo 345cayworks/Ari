@@ -97,8 +97,11 @@ Setup:
 
 1. Set the `RETELL_*`, `PUBLIC_BASE_URL` and `PHONE_HASH_SECRET` env vars (see `.env.example`), then run `npx prisma migrate dev --name polling`.
 2. Run `npm run retell:sync` to push the tools, analysis fields and webhook URL to `RETELL_AGENT_ID`. Add `--prompt` to also replace the agent's prompt, or `--dry-run` to preview. Tools and fields you added yourself in Retell are kept.
-3. Create a `Poll` row with `status = ACTIVE` and its dynamic variables (`poll_name`, `survey_questions`, ...) in `variables`. Give each question an ID like `Q1`.
-4. Place calls with `placePollCall(pollId, number)` from `lib/polling/calls.ts`. It refuses numbers on the do-not-call list and tags each call with the poll's ID. For dashboard test calls, pass `poll_id` as a dynamic variable or set `Poll.retellAgentId`.
+3. In **Admin → Polls**, create a poll, write its questions on the Setup tab (each starting with an ID like `Q1.` and ending with its options in brackets), then activate it.
+4. On the Calls tab, paste up to 20 numbers per batch to place calls. Numbers on the do-not-call list are skipped. The same tab lists callback requests and recent calls with their answers and quality flags.
+5. The Results tab tallies answers per question (unweighted) and exports a CSV with one row per call and no phone numbers.
+
+Calls can also be placed in code with `placePollCall(pollId, number)` from `lib/polling/calls.ts`. For test calls from the Retell dashboard, pass `poll_id` as a dynamic variable, or set the poll's Retell agent ID.
 
 ## Roadmap
 
@@ -120,11 +123,12 @@ Setup:
 ari/
 ├── app/
 │   ├── page.tsx                                # marketing /
+│   ├── (auth)/admin/login/page.tsx             # outside the gated layout
 │   ├── admin/                                  # gated dashboard
 │   │   ├── layout.tsx
 │   │   ├── page.tsx                            # overview
-│   │   ├── login/page.tsx
 │   │   ├── conversations/page.tsx
+│   │   ├── polls/                              # poll list, results, calls, setup, CSV
 │   │   ├── approvals/page.tsx
 │   │   ├── settings/page.tsx
 │   │   ├── usage/page.tsx

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const baseLinks = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/conversations", label: "Conversations" },
+  { href: "/admin/polls", label: "Polls" },
   { href: "/admin/approvals", label: "Approvals" },
   { href: "/admin/settings", label: "Settings" },
   { href: "/admin/usage", label: "Usage" },
