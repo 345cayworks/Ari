@@ -17,8 +17,9 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "retell:sync": "tsx --env-file=.env.local scripts/retell-sync.ts",
-    "postinstall": "prisma generate"
+    "retell:sync": "tsx --env-file-if-exists=.env.local scripts/retell-sync.ts",
+    "postinstall": "prisma generate",
+    "retell:create-agent": "tsx --env-file-if-exists=.env.local scripts/retell-create-agent.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.1",
