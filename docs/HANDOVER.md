@@ -126,11 +126,13 @@ and fill it in; `DIRECT_URL` is the Neon host **without** `-pooler` and
    fix the prompt before any real call, then `retell:sync -- --prompt`.
 5. **Voice not chosen.** Run `npm run retell:create-agent -- --list-voices` and
    pick with the user; it is the most audible choice in the system.
-6. **Still-missing environment variables:** `RETELL_FROM_NUMBER`,
-   `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `ARI_TELEGRAM_USER_ID`, and the four
-   generated secrets below. Present: `CLOUDFLARE_API_TOKEN`,
-   `CLOUDFLARE_ACCOUNT_ID`, `NEON_DIRECT_URL`, `NEON_DATABASE_URL`,
-   `RETELL_API_KEY`, `RETELL_AGENT_ID`, `TELEGRAM_BOT_TOKEN`.
+6. **Environment variables.** All present in the sandbox except
+   `ANTHROPIC_API_KEY` and `ALLOWED_TELEGRAM_USER_IDS`, which never appeared
+   across several fresh boots while every other edit landed — cause unknown.
+   `RETELL_FROM_NUMBER` is `+1345…` (it was briefly set to a US +1 601 number;
+   worth re-checking it is the trunk's Cayman number). The four generated
+   secrets are set and match the values handed to the user. `GROQ_API_KEY` is
+   set, though voice notes now degrade gracefully without it.
 
    Note on propagation, learned the hard way: environment **variable** edits do
    reach a freshly booted container, but the **network allowlist** edits did
