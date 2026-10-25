@@ -16,6 +16,10 @@ declare module "next-auth" {
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  // Auth.js only trusts the request Host automatically on Vercel, on Pages,
+  // or outside production. On Workers it would reject every auth route with
+  // UntrustedHost, so trust it explicitly.
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: { signIn: "/admin/login" },
   providers: [
