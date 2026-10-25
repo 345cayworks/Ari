@@ -59,10 +59,21 @@ resolving. The build is deploy-ready; only network access is missing.
    the webhook URL to `RETELL_AGENT_ID`; `--prompt` also pushes
    `retell/poll-agent-prompt.md`. It overwrites agent settings — show the user
    the diff first.
-3. **Caller number (blocker for real calls).** Retell-purchased numbers can
-   **only call US numbers**, and +1 345 isn't US. The user needs a +1 345 number
-   from Twilio or Telnyx, **imported** into Retell over a SIP trunk, set as
-   `RETELL_FROM_NUMBER`.
+3. **Caller number — SIP trunk is connected** (user, 2026-10-25), so this is no
+   longer a blocker. Retell-purchased numbers can only dial US numbers and
+   +1 345 isn't US, which is why the number is imported over a trunk instead.
+   What remains:
+   - Set `RETELL_FROM_NUMBER` to the imported number in E.164 (`+1345…`), in
+     `.env.local` and as a Worker secret. `Poll.fromNumber` overrides it
+     per poll.
+   - Confirm Retell lists it: `GET /list-phone-numbers`.
+   - **No agent binding is needed.** `callTask()` in `lib/polling/calls.ts`
+     sends `override_agent_id` on every call, single and batch, so the call
+     uses `RETELL_FROM_NUMBER` with our agent whatever the number is bound to
+     in the dashboard. Binding it as the outbound agent anyway does no harm and
+     makes dashboard test calls work.
+   - Numbers are normalised by `lib/polling/phone.ts`: 7 digits are treated as
+     +1 345, and batches drop anything that isn't `^\+\d{8,15}$`.
 4. **Re-register the Telegram webhook** at the new URL (Ari's original feature).
 5. **Smoke-test the Claude 5 switch** by sending a Telegram message, which
    exercises `lib/ari/brain.ts`. Watch for truncation: thinking is always on for
