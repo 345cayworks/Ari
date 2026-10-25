@@ -71,6 +71,16 @@ resolving. The build is deploy-ready; only network access is missing.
 
 ## Blocked on (2026-10-25, second session)
 
+**Blockers 1 and 2 below are specific to the Claude Code cloud sandbox. None
+of them exist in a local session** — a local machine reaches Retell,
+Cloudflare, Neon and Telegram normally, `wrangler login` can open a browser,
+and Postgres over TCP 5432 just works. Running this locally is the shortest
+path to a first deploy. Locally, the scripts read `.env.local` (both retell
+scripts use `--env-file-if-exists`), so copy `.env.example` to `.env.local`
+and fill it in; `DIRECT_URL` is the Neon host **without** `-pooler` and
+`DATABASE_URL` is the one **with** it.
+
+
 1. **Network allowlist.** The sandbox's policy denied `api.retellai.com`,
    `api.cloudflare.com`, `api.telegram.org`, `workers.cloudflare.com` and the
    Neon host — DNS does not even resolve. The user added them under Allowed
