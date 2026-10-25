@@ -31,13 +31,11 @@ const TABS = [
   ["setup", "Setup"],
 ] as const;
 
-export default async function PollPage({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams: SearchParams;
+export default async function PollPage(props: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
 }): Promise<JSX.Element> {
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
   const session = await auth();
   const tenantId = session?.user.tenantId;
   if (!tenantId) return <p>No tenant.</p>;

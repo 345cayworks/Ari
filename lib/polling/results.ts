@@ -1,7 +1,7 @@
 import type { PollCall, PollCallOutcome, PollResponse } from "@prisma/client";
 
-// Calls are placed one by one inside a server action, which Netlify times
-// out quickly; larger lists need Retell batch calling.
+// "Call now" places calls one by one inside a server action; it's meant for
+// test calls, and anything bigger should go through Retell batch calling.
 export const MAX_CALLS_PER_SUBMIT = 20;
 // Numbers per batch submission. Each 1,000 becomes one Retell batch request,
 // sent in parallel, which keeps the server action well inside its time limit.

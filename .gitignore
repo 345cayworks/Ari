@@ -12,3 +12,7 @@ dist/
 .idea/
 next-env.d.ts
 tsconfig.tsbuildinfo
+.open-next/
+.wrangler/
+.dev.vars*
+!.dev.vars.example

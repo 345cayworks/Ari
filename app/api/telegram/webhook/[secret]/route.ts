@@ -85,10 +85,11 @@ async function handleUpdate(update: any): Promise<void> {
 
 export async function POST(
   req: Request,
-  { params }: { params: { secret: string } }
+  { params }: { params: Promise<{ secret: string }> }
 ): Promise<NextResponse> {
+  const { secret } = await params;
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!expected || params.secret !== expected) {
+  if (!expected || secret !== expected) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const headerSecret = req.headers.get("x-telegram-bot-api-secret-token");

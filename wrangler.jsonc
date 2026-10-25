@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ari",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-19",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    // Self-reference used by OpenNext; must match "name" above.
+    { "binding": "WORKER_SELF_REFERENCE", "service": "ari" }
+  ],
+  "observability": { "enabled": true }
+
+  // Optional: pool Neon connections through Hyperdrive. Create it with
+  //   npx wrangler hyperdrive create ari-db --connection-string="<DIRECT_URL>"
+  // then uncomment and paste the id. lib/db.ts uses it when present.
+  // "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<id>" }]
+}

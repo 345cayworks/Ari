@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: { error?: string };
+  searchParams: Promise<{ error?: string }>;
 }): Promise<JSX.Element> {
+  const { error } = await searchParams;
   const session = await auth();
   if (session?.user) redirect("/admin");
 
@@ -19,7 +20,7 @@ export default async function LoginPage({
           Use your SuperAdmin email and master key.
         </p>
 
-        {searchParams.error ? (
+        {error ? (
           <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
             Sign-in failed. Check email and master key.
           </div>

@@ -18,15 +18,16 @@ function csvCell(value: unknown): string {
 // One row per call, one column per question. No phone numbers.
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
+  const { id } = await params;
   const session = await auth();
   const role = session?.user.role;
   const tenantId = session?.user.tenantId;
   if (!tenantId || (role !== Role.SUPER_ADMIN && role !== Role.ADMIN)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  const poll = await prisma.poll.findFirst({ where: { id: params.id, tenantId } });
+  const poll = await prisma.poll.findFirst({ where: { id, tenantId } });
   if (!poll) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   // Weights cover completed interviews, the base the Results tab uses.

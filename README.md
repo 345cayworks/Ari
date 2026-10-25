@@ -6,7 +6,7 @@ Talk to Ari from your phone via Telegram. She drafts client communications, trac
 
 ## Stack
 
-- **Next.js 14** (App Router) on **Netlify**
+- **Next.js 15** (App Router) on **Cloudflare Workers** via OpenNext
 - **Neon Postgres** + **Prisma** ORM
 - **NextAuth v5** (Credentials → magic-link in Phase 1)
 - **Anthropic Claude** (Sonnet 4.6 default, Haiku 4.5 for routing)
@@ -72,17 +72,21 @@ npx ngrok http 3000
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://<ngrok-id>.ngrok.app/api/telegram/webhook/$TELEGRAM_WEBHOOK_SECRET&secret_token=$TELEGRAM_WEBHOOK_SECRET"
 ```
 
-In production, Netlify gives you the URL directly.
+In production, the Worker's URL is used directly.
 
-## Deploy to Netlify
+## Deploy to Cloudflare Workers
 
-1. Push branch to GitHub
-2. New Netlify site → connect repo
-3. Add all env vars in Netlify → Site settings → Environment variables (Production + Deploy Previews)
-4. First deploy will run `prisma generate && next build`
-5. Run migrations once: locally do `DATABASE_URL=<prod-url> npx prisma migrate deploy`
-6. Set `NEXTAUTH_URL=https://<your-site>.netlify.app`
-7. Register Telegram webhook to `https://<your-site>.netlify.app/api/telegram/webhook/<TELEGRAM_WEBHOOK_SECRET>`
+The app runs on Workers through [OpenNext](https://opennext.js.org/cloudflare) (`@opennextjs/cloudflare`). Prisma connects to Neon over Postgres with `@prisma/adapter-pg`, one client per request (see `lib/db.ts`). Optionally it goes through Hyperdrive for connection pooling.
+
+1. `npx wrangler login`
+2. Run migrations once: `DATABASE_URL=<neon-direct-url> npx prisma migrate deploy`
+3. Add every variable from `.env.example` as a Worker secret, e.g. `npx wrangler secret put DATABASE_URL` (or in the Cloudflare dashboard under Workers → ari → Settings → Variables and secrets). Use Neon's **direct** (non-pooled) connection string for `DATABASE_URL`.
+4. `npm run deploy`. This builds with OpenNext and uploads the Worker. The first deploy prints the URL, e.g. `https://ari.<subdomain>.workers.dev`.
+5. Set `NEXTAUTH_URL` and `PUBLIC_BASE_URL` to that URL (or your custom domain), then deploy again.
+6. Point integrations at it: `npm run retell:sync` for Retell, and register the Telegram webhook at `https://<worker-url>/api/telegram/webhook/<TELEGRAM_WEBHOOK_SECRET>`.
+7. Optional, Hyperdrive: `npx wrangler hyperdrive create ari-db --connection-string="<neon-direct-url>"`, then uncomment the `hyperdrive` block in `wrangler.jsonc` with the returned id. `lib/db.ts` uses it automatically.
+
+`npm run preview` builds and runs the Worker locally in workerd. It reads secrets from `.dev.vars`, which is gitignored and uses the same keys as `.env.example`. `npm run dev` is still plain Next.js on Node.
 
 ## Polling (Retell voice agents)
 
@@ -159,8 +163,9 @@ ari/
 ├── prisma/
 │   ├── schema.prisma
 │   └── seed.ts
-├── netlify.toml
-├── next.config.js
+├── next.config.ts
+├── open-next.config.ts                         # OpenNext (Cloudflare) build config
+├── wrangler.jsonc                              # Worker config
 ├── tailwind.config.ts
 └── tsconfig.json
 ```
