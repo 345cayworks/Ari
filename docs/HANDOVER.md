@@ -18,14 +18,24 @@ A polling company for the Cayman Islands, with AI voice interviewers on **Retell
 | Init migration for the whole schema — 17 tables, 9 enums, verified zero drift | `ca8aee0` |
 | Auth.js `trustHost` — login returned 500 `UntrustedHost` on Workers | `d305800` |
 | Default models moved to the Claude 5 family; cost table corrected | `8490487` |
+| `ARI_MODEL` set to Sonnet 5.5 (user's choice over Opus 5.5) | `014f97f` |
+| `scripts/retell-create-agent.ts` — nothing in the repo could create an agent | `3897b47` |
 
 Each step was tested end to end against a throwaway Postgres, a mock Retell API and Playwright. The Cloudflare port was also tested inside workerd (`wrangler dev`), including 30 concurrent requests. Typecheck and build pass. **Nothing has run against a real Retell account, real Neon database, or real Cloudflare deploy.** The 2026-10-25 session added the three commits above and verified login end to end against the production build (`NODE_ENV=production`, csrf 200, master key returns a SUPER_ADMIN session, wrong key rejected). The Claude 5 model switch is **not** verified against the live API — no `ANTHROPIC_API_KEY` in the sandbox.
 
 ## Next steps (in order)
 
 Decisions already taken with the user: **`prisma migrate deploy`** using the
-committed init migration (not `db push`), and **no Hyperdrive** on the first
-deploy (`lib/db.ts` picks it up later if the binding appears).
+committed init migration (not `db push`); **no Hyperdrive** on the first deploy
+(`lib/db.ts` picks it up later if the binding appears); `ARI_MODEL` =
+**`claude-sonnet-5-5`**; the Retell in-call model = **`claude-5.5-sonnet`** and
+language **`en-US`** (already the defaults in `retell-create-agent.ts`, so run
+it without `--model` or `--language`).
+
+Verified offline on this HEAD (2026-10-25): `npm run typecheck`, `npm run
+build`, `npx opennextjs-cloudflare build`, and `wrangler deploy --dry-run` —
+**2224 KiB gzipped** against the 3 MB free-plan limit, both bindings
+resolving. The build is deploy-ready; only network access is missing.
 
 1. **Deploy to Cloudflare.** Worker name `ari` confirmed free (39 Workers on the
    account; `ari-crm-api` is unrelated). The Cloudflare connector cannot deploy
@@ -58,6 +68,39 @@ deploy (`lib/db.ts` picks it up later if the binding appears).
    exercises `lib/ari/brain.ts`. Watch for truncation: thinking is always on for
    Opus 5.5 and counts against `max_tokens`, now 4096.
 6. **Open a PR** when the user asks. They haven't yet.
+
+## Blocked on (2026-10-25, second session)
+
+1. **Network allowlist.** The sandbox's policy denied `api.retellai.com`,
+   `api.cloudflare.com`, `api.telegram.org`, `workers.cloudflare.com` and the
+   Neon host — DNS does not even resolve. The user added them under Allowed
+   domains, but **a policy change only takes effect in a new session**, like the
+   secrets. Re-test first thing:
+   `curl -o /dev/null -w '%{http_code}\n' https://api.retellai.com/`
+   and `getaddrinfo` on the Neon host. `$HTTPS_PROXY/__agentproxy/status`
+   lists recent denials under `recentRelayFailures`.
+2. **Postgres may still not work even with the Neon host allowed.** Prisma
+   connects over raw TCP 5432, which an HTTP CONNECT proxy does not carry. If
+   DNS resolves but 5432 does not open, the fallbacks are the user running
+   `prisma migrate deploy` locally, or applying
+   `prisma/migrations/20261025043722_init/migration.sql` over Neon's HTTP SQL
+   endpoint and inserting the matching `_prisma_migrations` row by hand.
+3. **`NEON_DATABASE_URL` is the direct URL, not the pooled one.** Both Neon
+   variables held the identical non-pooled string. `lib/db.ts` makes one client
+   per request on Workers, so without the `-pooler` host Neon's connection
+   ceiling becomes the app's concurrency ceiling. Asked the user to fix it;
+   re-check before setting the Worker secret.
+4. **`retell/poll-agent-prompt.md` still says `[COMPANY NAME]`, twice** —
+   including in the line the agent speaks when asked who is calling. A live
+   interviewer would read the placeholder aloud. Waiting on the company name;
+   fix the prompt before any real call, then `retell:sync -- --prompt`.
+5. **Voice not chosen.** Run `npm run retell:create-agent -- --list-voices` and
+   pick with the user; it is the most audible choice in the system.
+6. **Still-missing environment variables:** `ANTHROPIC_API_KEY`, `GROQ_API_KEY`,
+   `ARI_TELEGRAM_USER_ID`, and the four generated secrets below. Present as of
+   the second session: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
+   `NEON_DIRECT_URL`, `NEON_DATABASE_URL`, `RETELL_API_KEY`,
+   `TELEGRAM_BOT_TOKEN`.
 
 ## Environment variables the next session needs
 
@@ -125,4 +168,4 @@ production.
 
 ## Prompt to start the next session
 
-> Continue the Ari polling work on branch `claude/stoic-tesla-2tUY0` of `345cayworks/ari`. Read `docs/HANDOVER.md` first. The credentials are in the environment now — check which of the variables under "Environment variables the next session needs" are set, then deploy to Cloudflare Workers as `ari`. Confirm with me before the migration, the deploy, and anything that overwrites Retell agent settings.
+> Continue the Ari polling work on branch `claude/stoic-tesla-2tUY0` of `345cayworks/ari`. Read `docs/HANDOVER.md` first, then re-test the hosts under "Blocked on" — the domains and secrets were added but needed a new session. If Retell is reachable, create the polling agent (`npm run retell:create-agent -- --list-voices` first, then pick a voice with me) and give me the agent ID. Confirm with me before the migration, the deploy, and anything that overwrites Retell agent settings.
