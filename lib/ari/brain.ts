@@ -60,7 +60,7 @@ export async function respond(args: RespondArgs): Promise<string> {
 
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
     const response = await client.messages.create({
-      model: process.env.ARI_MODEL ?? "claude-opus-5-5",
+      model: process.env.ARI_MODEL ?? "claude-sonnet-5-5",
       // Thinking is always on and cannot be disabled on Opus 5.5, and its
       // tokens count against max_tokens. 1024 was sized for a model that ran
       // without thinking and would truncate before any text block.
@@ -124,7 +124,7 @@ export async function respond(args: RespondArgs): Promise<string> {
 
   await recordUsage({
     tenantId,
-    model: process.env.ARI_MODEL ?? "claude-opus-5-5",
+    model: process.env.ARI_MODEL ?? "claude-sonnet-5-5",
     inputTokens: totalIn,
     outputTokens: totalOut,
     cacheReadTokens: totalCacheRead,
@@ -168,7 +168,7 @@ function estimateCost({
     "claude-haiku-4-5":   { in: 1,    out: 5,   cacheRead: 0.10, cacheWrite: 1.25 },
     "claude-haiku-4-5-20251001": { in: 1, out: 5, cacheRead: 0.10, cacheWrite: 1.25 },
   };
-  const p = pricing[model] ?? pricing["claude-opus-5-5"]!;
+  const p = pricing[model] ?? pricing["claude-sonnet-5-5"]!;
   return (
     (inputTokens * p.in +
       outputTokens * p.out +

@@ -127,7 +127,7 @@ export default async function SuperAdminPage(): Promise<JSX.Element> {
         <dl className="mt-3 text-sm divide-y divide-ink/5">
           {(
             [
-              ["Model (smart)", process.env.ARI_MODEL ?? "claude-opus-5-5"],
+              ["Model (smart)", process.env.ARI_MODEL ?? "claude-sonnet-5-5"],
               ["Model (fast)", process.env.ARI_FAST_MODEL ?? "claude-haiku-5-5"],
               ["Telegram bot", process.env.TELEGRAM_BOT_TOKEN ? "configured" : "missing"],
               ["Groq STT", process.env.GROQ_API_KEY ? "configured" : "missing"],
