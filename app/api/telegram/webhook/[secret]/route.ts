@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Bot } from "grammy";
 import { prisma } from "@/lib/db";
 import { respond } from "@/lib/ari/brain";
-import { transcribe } from "@/lib/ari/stt";
+import { transcribe, transcriptionConfigured } from "@/lib/ari/stt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +42,12 @@ async function handleUpdate(update: any): Promise<void> {
     const text = String(message.text).trim();
     if (!text || text.startsWith("/")) {
       if (text === "/start") {
-        await bot.api.sendMessage(chatId, "Ari here. Send a message or voice note.");
+        await bot.api.sendMessage(
+          chatId,
+          transcriptionConfigured()
+            ? "Ari here. Send a message or voice note."
+            : "Ari here. Send a message."
+        );
       } else if (text === "/whoami") {
         await bot.api.sendMessage(chatId, `Telegram ID: ${telegramId}`);
       }
@@ -59,6 +64,16 @@ async function handleUpdate(update: any): Promise<void> {
   }
 
   if (message.voice) {
+    // Throwing here would return a 500, and Telegram would redeliver the same
+    // voice note on a timer. Answer instead, so the update is settled.
+    if (!transcriptionConfigured()) {
+      await bot.api.sendMessage(
+        chatId,
+        "(voice notes aren't set up — send it as text and I'll pick it up)"
+      );
+      return;
+    }
+
     await bot.api.sendChatAction(chatId, "typing");
     const file = await bot.api.getFile(message.voice.file_id);
     if (!file.file_path) throw new Error("Telegram returned no file_path");
@@ -67,7 +82,18 @@ async function handleUpdate(update: any): Promise<void> {
     if (!res.ok) throw new Error(`Download failed: ${res.status}`);
     const audio = Buffer.from(await res.arrayBuffer());
 
-    const text = await transcribe(audio, "voice.ogg");
+    let text: string;
+    try {
+      text = await transcribe(audio, "voice.ogg");
+    } catch (err) {
+      // A rejected key or a rate limit should not become a redelivery loop.
+      console.error("Voice transcription failed:", err);
+      await bot.api.sendMessage(
+        chatId,
+        "(couldn't transcribe that one — could you send it as text?)"
+      );
+      return;
+    }
     if (!text) {
       await bot.api.sendMessage(chatId, "(couldn't make out the voice note)");
       return;

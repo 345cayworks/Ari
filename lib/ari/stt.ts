@@ -1,3 +1,8 @@
+// Voice notes are optional: Ari works on text without GROQ_API_KEY.
+export function transcriptionConfigured(): boolean {
+  return Boolean(process.env.GROQ_API_KEY);
+}
+
 export async function transcribe(
   audio: Buffer,
   filename: string
