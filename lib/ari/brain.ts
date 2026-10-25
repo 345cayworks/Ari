@@ -60,8 +60,11 @@ export async function respond(args: RespondArgs): Promise<string> {
 
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
     const response = await client.messages.create({
-      model: process.env.ARI_MODEL ?? "claude-sonnet-4-6",
-      max_tokens: 1024,
+      model: process.env.ARI_MODEL ?? "claude-opus-5-5",
+      // Thinking is always on and cannot be disabled on Opus 5.5, and its
+      // tokens count against max_tokens. 1024 was sized for a model that ran
+      // without thinking and would truncate before any text block.
+      max_tokens: 4096,
       system: [
         { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
       ],
@@ -121,7 +124,7 @@ export async function respond(args: RespondArgs): Promise<string> {
 
   await recordUsage({
     tenantId,
-    model: process.env.ARI_MODEL ?? "claude-sonnet-4-6",
+    model: process.env.ARI_MODEL ?? "claude-opus-5-5",
     inputTokens: totalIn,
     outputTokens: totalOut,
     cacheReadTokens: totalCacheRead,
@@ -156,11 +159,16 @@ function estimateCost({
 }: UsageArgs): number {
   // Rough per-million-token pricing (USD). Update as published rates change.
   const pricing: Record<string, { in: number; out: number; cacheRead: number; cacheWrite: number }> = {
+    "claude-opus-5-5":    { in: 4,    out: 20,  cacheRead: 0.20, cacheWrite: 5 },
+    "claude-sonnet-5-5":  { in: 2,    out: 10,  cacheRead: 0.10, cacheWrite: 2.50 },
+    // Haiku 5.5 is priced by prompt size; this is the up-to-100k tier.
+    "claude-haiku-5-5":   { in: 0.10, out: 0.50, cacheRead: 0.01, cacheWrite: 0.125 },
     "claude-sonnet-4-6":  { in: 3,    out: 15,  cacheRead: 0.30, cacheWrite: 3.75 },
-    "claude-opus-4-7":    { in: 15,   out: 75,  cacheRead: 1.50, cacheWrite: 18.75 },
+    "claude-opus-4-7":    { in: 5,    out: 25,  cacheRead: 0.50, cacheWrite: 6.25 },
+    "claude-haiku-4-5":   { in: 1,    out: 5,   cacheRead: 0.10, cacheWrite: 1.25 },
     "claude-haiku-4-5-20251001": { in: 1, out: 5, cacheRead: 0.10, cacheWrite: 1.25 },
   };
-  const p = pricing[model] ?? pricing["claude-sonnet-4-6"]!;
+  const p = pricing[model] ?? pricing["claude-opus-5-5"]!;
   return (
     (inputTokens * p.in +
       outputTokens * p.out +

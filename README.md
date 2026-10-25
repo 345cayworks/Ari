@@ -9,7 +9,7 @@ Talk to Ari from your phone via Telegram. She drafts client communications, trac
 - **Next.js 15** (App Router) on **Cloudflare Workers** via OpenNext
 - **Neon Postgres** + **Prisma** ORM
 - **NextAuth v5** (Credentials → magic-link in Phase 1)
-- **Anthropic Claude** (Sonnet 4.6 default, Haiku 4.5 for routing)
+- **Anthropic Claude** (Opus 5.5 default, Haiku 5.5 for routing)
 - **Groq Whisper** for voice-note transcription
 - **grammY** for Telegram
 - Multi-tenant from day 1, SaaS-ready
