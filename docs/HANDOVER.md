@@ -106,22 +106,38 @@ and fill it in; `DIRECT_URL` is the Neon host **without** `-pooler` and
    `prisma migrate deploy` locally, or applying
    `prisma/migrations/20261025043722_init/migration.sql` over Neon's HTTP SQL
    endpoint and inserting the matching `_prisma_migrations` row by hand.
-3. **`NEON_DATABASE_URL` is the direct URL, not the pooled one.** Both Neon
-   variables held the identical non-pooled string. `lib/db.ts` makes one client
-   per request on Workers, so without the `-pooler` host Neon's connection
-   ceiling becomes the app's concurrency ceiling. Asked the user to fix it;
-   re-check before setting the Worker secret.
+3. ~~Neon variables inverted~~ **Fixed 2026-10-25.** `NEON_DIRECT_URL` is now
+   the host without `-pooler` and `NEON_DATABASE_URL` the one with it. Worth
+   re-asserting before setting the Worker secret: this pair has been wrong in
+   both directions once each.
+3b. **The agent exists** — the user created it and `RETELL_AGENT_ID` is set in
+   the environment (don't hardcode it here; it would go stale if the agent is
+   recreated). **Check its response engine before trusting `retell:sync`:**
+   `GET /get-agent/$RETELL_AGENT_ID` and confirm `response_engine.type` is
+   `retell-llm`. `scripts/retell-sync.ts` throws on anything else, and Retell's
+   AI agent builder tends to produce **Conversation Flow** agents, which it
+   cannot sync. If that is what exists, recreate it with
+   `npm run retell:create-agent` (which always makes a retell-llm agent) or
+   switch it to Single Prompt in the dashboard.
+
 4. **`retell/poll-agent-prompt.md` still says `[COMPANY NAME]`, twice** —
    including in the line the agent speaks when asked who is calling. A live
    interviewer would read the placeholder aloud. Waiting on the company name;
    fix the prompt before any real call, then `retell:sync -- --prompt`.
 5. **Voice not chosen.** Run `npm run retell:create-agent -- --list-voices` and
    pick with the user; it is the most audible choice in the system.
-6. **Still-missing environment variables:** `ANTHROPIC_API_KEY`, `GROQ_API_KEY`,
-   `ARI_TELEGRAM_USER_ID`, and the four generated secrets below. Present as of
-   the second session: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
-   `NEON_DIRECT_URL`, `NEON_DATABASE_URL`, `RETELL_API_KEY`,
-   `TELEGRAM_BOT_TOKEN`.
+6. **Still-missing environment variables:** `RETELL_FROM_NUMBER`,
+   `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `ARI_TELEGRAM_USER_ID`, and the four
+   generated secrets below. Present: `CLOUDFLARE_API_TOKEN`,
+   `CLOUDFLARE_ACCOUNT_ID`, `NEON_DIRECT_URL`, `NEON_DATABASE_URL`,
+   `RETELL_API_KEY`, `RETELL_AGENT_ID`, `TELEGRAM_BOT_TOKEN`.
+
+   Note on propagation, learned the hard way: environment **variable** edits do
+   reach a freshly booted container, but the **network allowlist** edits did
+   not, across several fresh boots. Same boot, different outcome — so a blocked
+   host is evidence about the allowlist itself, not about timing. Allowed
+   domains only applies under the *Limited* access level, and entries want
+   bare hostnames.
 
 ## Environment variables the next session needs
 
