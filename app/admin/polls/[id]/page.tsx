@@ -24,7 +24,9 @@ import {
   publicationBlockers,
   QuestionChart,
 } from "@/components/poll-charts";
+import { POLL_TEMPLATES } from "@/lib/polling/templates";
 import {
+  applyTemplate,
   createBatch,
   placeCalls,
   reconcileCalls,
@@ -102,7 +104,9 @@ export default async function PollPage(props: {
       )}
       {tab === "weighting" && <WeightingTab poll={poll} searchParams={searchParams} />}
       {tab === "calls" && <CallsTab poll={poll} searchParams={searchParams} />}
-      {tab === "setup" && <SetupTab poll={poll} saved={searchParams.saved === "1"} />}
+      {tab === "setup" && (
+        <SetupTab poll={poll} saved={searchParams.saved === "1"} applied={searchParams.applied} />
+      )}
     </div>
   );
 }
@@ -651,20 +655,80 @@ const ENV_CHECKS = [
   ["PHONE_HASH_SECRET", "Phone hash secret"],
 ] as const;
 
-function SetupTab({ poll, saved }: { poll: Poll; saved: boolean }): JSX.Element {
+function SetupTab({
+  poll,
+  saved,
+  applied,
+}: {
+  poll: Poll;
+  saved: boolean;
+  applied?: string;
+}): JSX.Element {
   const vars = (poll.variables ?? {}) as Record<string, string>;
   const missing = ENV_CHECKS.filter(([key]) => !process.env[key]);
   const nextStatuses = (["DRAFT", "ACTIVE", "CLOSED"] as const).filter((s) => s !== poll.status);
+  const hasQuestions = Boolean(vars.survey_questions?.trim());
 
   return (
     <div className="space-y-6 max-w-3xl">
       {saved && <Banner tone="ok">Saved.</Banner>}
+      {applied && <Banner tone="ok">Loaded &ldquo;{applied}&rdquo;. Edit the questions below, then save.</Banner>}
       {missing.length > 0 && (
         <Banner tone="error">
           Missing environment variables: {missing.map(([k]) => k).join(", ")}. Calls can&apos;t be
           placed until these are set.
         </Banner>
       )}
+
+      <div className="card">
+        <h2 className="text-lg font-semibold">Start from a template</h2>
+        <p className="mt-1 text-sm text-ink/60">
+          Ready-made question sets with balanced scales, an explicit way to say &ldquo;don&rsquo;t
+          know&rdquo;, and demographics that match the weighting presets. Each one explains which
+          words are load-bearing — read that before editing.
+        </p>
+        {hasQuestions ? (
+          <p className="mt-4 text-sm text-accent-deep">
+            This poll already has survey questions, so templates are locked. Clear the survey
+            questions field below and save if you want to start from one.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-3">
+            {POLL_TEMPLATES.map((t) => (
+              <li key={t.key} className="rounded-xl border border-ink/10 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">{t.name}</p>
+                    <p className="mt-0.5 text-sm text-ink/60">{t.description}</p>
+                    <p className="mt-1 text-xs text-ink/40">
+                      About {t.estimatedMinutes} minutes ·{" "}
+                      {t.survey.split("\n").length + t.screening.split("\n").length + t.demographics.split("\n").length}{" "}
+                      questions
+                    </p>
+                  </div>
+                  <form action={applyTemplate} className="shrink-0">
+                    <input type="hidden" name="pollId" value={poll.id} />
+                    <input type="hidden" name="template" value={t.key} />
+                    <button type="submit" className="btn-secondary px-4 py-2">
+                      Use this
+                    </button>
+                  </form>
+                </div>
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-sm text-sea-deep">
+                    Why it&rsquo;s worded this way
+                  </summary>
+                  <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm text-ink/70">
+                    {t.notes.map((n) => (
+                      <li key={n}>{n}</li>
+                    ))}
+                  </ul>
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div className="card flex flex-wrap items-center justify-between gap-3">
         <div>

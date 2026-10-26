@@ -12,6 +12,7 @@ import {
   reconcilePollCalls,
 } from "@/lib/polling/calls";
 import { TARGET_PRESETS } from "@/lib/polling/census";
+import { findTemplate } from "@/lib/polling/templates";
 import { normalizePhone, tryNormalizePhone } from "@/lib/polling/phone";
 import { parseCategories, readWeightingConfig, type WeightTarget } from "@/lib/polling/weighting";
 import {
@@ -93,6 +94,34 @@ export async function reconcileCalls(formData: FormData): Promise<void> {
     present: String(r.alreadyPresent),
   });
   redirect(`/admin/polls/${poll.id}?${q}`);
+}
+
+// Fills the question fields from a ready-made set. It refuses to overwrite
+// existing survey questions — losing a drafted questionnaire to a stray click
+// is worse than making someone clear the field on purpose.
+export async function applyTemplate(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const template = findTemplate(field(formData, "template"));
+  if (!template) return;
+
+  const vars = { ...((poll.variables ?? {}) as Record<string, string>) };
+  if (vars.survey_questions?.trim()) {
+    redirect(
+      `/admin/polls/${poll.id}?tab=setup&error=${encodeURIComponent(
+        "This poll already has survey questions. Clear them first if you want to start from a template."
+      )}`
+    );
+  }
+
+  vars.screening_questions = template.screening;
+  vars.survey_questions = template.survey;
+  vars.demographic_questions = template.demographics;
+  vars.estimated_minutes = template.estimatedMinutes;
+  if (!vars.poll_topic?.trim()) vars.poll_topic = template.topic;
+
+  await prisma.poll.update({ where: { id: poll.id }, data: { variables: vars } });
+  revalidatePath(`/admin/polls/${poll.id}`);
+  redirect(`/admin/polls/${poll.id}?tab=setup&applied=${encodeURIComponent(template.name)}`);
 }
 
 export async function setPollStatus(formData: FormData): Promise<void> {
