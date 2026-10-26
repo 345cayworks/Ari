@@ -26,6 +26,20 @@ export const rememberTool: Tool = {
   },
   async execute(input, ctx) {
     const { subject, fact } = input as { subject: string; fact: string };
+
+    // The same fact arriving twice is a re-save, not new knowledge. Without
+    // this a subject slowly fills with near-identical entries, which then all
+    // get loaded back into every prompt.
+    const existing = await prisma.fact.findFirst({
+      where: {
+        tenantId: ctx.tenantId,
+        subject,
+        fact: { equals: fact, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+    if (existing) return `Already knew that about "${subject}" — nothing to change.`;
+
     await prisma.fact.create({
       data: { tenantId: ctx.tenantId, subject, fact },
     });

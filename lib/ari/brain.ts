@@ -16,10 +16,30 @@ Core principles:
 
 const MAX_HISTORY = 30;
 const MAX_TOOL_HOPS = 8;
+const MAX_FACTS = 100;
 
-function buildSystemPrompt(override: string | null): string {
+// Facts were write-only until this existed: the remember tool saved them and
+// nothing ever read them back, so Ari could not see what it already knew. It
+// would re-save the same thing, and — asked to confirm a save — apologise for
+// a failure that had not happened.
+function buildSystemPrompt(
+  override: string | null,
+  facts: { subject: string; fact: string }[]
+): string {
   const base = override?.trim() ? override : DEFAULT_SYSTEM_PROMPT;
-  return `${base}\n\nToday is ${new Date().toISOString().slice(0, 10)}.`;
+  const today = `Today is ${new Date().toISOString().slice(0, 10)}.`;
+  if (facts.length === 0) return `${base}\n\n${today}`;
+
+  // Grouped by subject so related facts read together.
+  const bySubject = new Map<string, string[]>();
+  for (const f of facts) {
+    bySubject.set(f.subject, [...(bySubject.get(f.subject) ?? []), f.fact]);
+  }
+  const memory = [...bySubject]
+    .map(([subject, items]) => `${subject}\n${items.map((i) => `  - ${i}`).join("\n")}`)
+    .join("\n");
+
+  return `${base}\n\n${today}\n\nWhat you already know about this user and their work. This is your memory — answer from it directly, do not save a fact that is already here, and if the user corrects something, save the corrected version.\n\n${memory}`;
 }
 
 export interface RespondArgs {
@@ -36,11 +56,21 @@ export async function respond(args: RespondArgs): Promise<string> {
     data: { tenantId, role: MessageRole.user, content: userText, channel },
   });
 
-  const tenant = await prisma.tenant.findUniqueOrThrow({
-    where: { id: tenantId },
-    select: { systemPromptOverride: true },
-  });
-  const systemPrompt = buildSystemPrompt(tenant.systemPromptOverride);
+  const [tenant, facts] = await Promise.all([
+    prisma.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { systemPromptOverride: true },
+    }),
+    // Newest first so a long memory keeps what matters most, then reversed so
+    // each subject reads in the order it was learned.
+    prisma.fact.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: MAX_FACTS,
+      select: { subject: true, fact: true },
+    }),
+  ]);
+  const systemPrompt = buildSystemPrompt(tenant.systemPromptOverride, facts.reverse());
 
   const history = await prisma.message.findMany({
     where: { tenantId },
