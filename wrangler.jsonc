@@ -12,6 +12,12 @@
     // Self-reference used by OpenNext; must match "name" above.
     { "binding": "WORKER_SELF_REFERENCE", "service": "ari" }
   ],
+  // Custom domain on the cayworks.net zone. Wrangler creates the DNS record and
+  // orders the certificate. Adding a route turns the *.workers.dev URL OFF by
+  // default, which 404s every webhook still pointed at it — so keep it on
+  // explicitly until nothing depends on it.
+  "routes": [{ "pattern": "polling.cayworks.net", "custom_domain": true }],
+  "workers_dev": true,
   "observability": { "enabled": true }
 
   // Optional: pool Neon connections through Hyperdrive. Create it with
