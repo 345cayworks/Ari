@@ -5,9 +5,14 @@ import { revalidatePath } from "next/cache";
 import { PollStatus, Role } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { createPollBatch, DoNotCallError, placePollCall } from "@/lib/polling/calls";
+import {
+  createPollBatch,
+  DoNotCallError,
+  placePollCall,
+  reconcilePollCalls,
+} from "@/lib/polling/calls";
 import { TARGET_PRESETS } from "@/lib/polling/census";
-import { normalizePhone } from "@/lib/polling/phone";
+import { normalizePhone, tryNormalizePhone } from "@/lib/polling/phone";
 import { parseCategories, readWeightingConfig, type WeightTarget } from "@/lib/polling/weighting";
 import {
   MAX_BATCH_NUMBERS,
@@ -76,13 +81,33 @@ export async function updatePoll(formData: FormData): Promise<void> {
   redirect(`/admin/polls/${poll.id}?tab=setup&saved=1`);
 }
 
+// Pulls in calls Retell never delivered a webhook for. Safe to press twice.
+export async function reconcileCalls(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const r = await reconcilePollCalls(poll);
+  revalidatePath(`/admin/polls/${poll.id}`);
+  const q = new URLSearchParams({
+    tab: "calls",
+    reconciled: String(r.ingested),
+    scanned: String(r.scanned),
+    present: String(r.alreadyPresent),
+  });
+  redirect(`/admin/polls/${poll.id}?${q}`);
+}
+
 export async function setPollStatus(formData: FormData): Promise<void> {
   const poll = await requirePoll(field(formData, "pollId"));
   const status = field(formData, "status") as PollStatus;
   if (!Object.values(PollStatus).includes(status)) return;
   const vars = (poll.variables ?? {}) as Record<string, string>;
-  if (status === PollStatus.ACTIVE && !vars.survey_questions?.trim()) {
-    redirect(`/admin/polls/${poll.id}?tab=setup&error=${encodeURIComponent("Add survey questions before activating.")}`);
+  if (status === PollStatus.ACTIVE) {
+    // The agent reads the company name aloud in its opening line, so a blank
+    // one means every respondent hears "calling on behalf of" and a gap.
+    const missing = (["survey_questions", "company_name"] as const).find((k) => !vars[k]?.trim());
+    if (missing) {
+      const what = missing === "company_name" ? "a company name" : "survey questions";
+      redirect(`/admin/polls/${poll.id}?tab=setup&error=${encodeURIComponent(`Add ${what} before activating.`)}`);
+    }
   }
   await prisma.poll.update({ where: { id: poll.id }, data: { status } });
   revalidatePath(`/admin/polls/${poll.id}`);
@@ -91,17 +116,17 @@ export async function setPollStatus(formData: FormData): Promise<void> {
 
 export async function placeCalls(formData: FormData): Promise<void> {
   const poll = await requirePoll(field(formData, "pollId"));
-  const numbers = [
-    ...new Set(
-      field(formData, "numbers")
-        .split(/[\n,;]+/)
-        .map((n) => n.trim())
-        .filter((n) => n.replace(/\D/g, "").length >= 7)
-        .map(normalizePhone)
-    ),
-  ];
+  const entered = field(formData, "numbers")
+    .split(/[\n,;]+/)
+    .map((n) => n.trim())
+    .filter(Boolean);
+  // Reject anything that isn't plainly a Cayman or NANP number rather than
+  // prefixing "+" and dialling it, which once sent a call to France.
+  const normalised = entered.map(tryNormalizePhone);
+  const numbers = [...new Set(normalised.filter((n): n is string => n !== null))];
+  const invalid = normalised.filter((n) => n === null).length;
 
-  const result = { placed: 0, blocked: 0, failed: 0, skipped: 0, error: "" };
+  const result = { placed: 0, blocked: 0, failed: 0, skipped: 0, invalid, error: "" };
   if (numbers.length > MAX_CALLS_PER_SUBMIT) {
     result.skipped = numbers.length - MAX_CALLS_PER_SUBMIT;
   }
@@ -125,6 +150,7 @@ export async function placeCalls(formData: FormData): Promise<void> {
     blocked: String(result.blocked),
     failed: String(result.failed),
     skipped: String(result.skipped),
+    invalid: String(result.invalid),
     // Changes every submit so the page remounts the form and clears the numbers.
     batch: String(Date.now()),
   });

@@ -1,7 +1,7 @@
 import { PollCallOutcome, type Poll } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { CALL_OUTCOMES } from "./config";
-import { hashPhone, normalizePhone } from "./phone";
+import { hashPhone, normalizePhone, tryNormalizePhone } from "./phone";
 import {
   respondentNumber,
   retellApi,
@@ -258,6 +258,52 @@ export async function handleWebhookEvent(event: string, call: RetellCall): Promi
 
 // --- Placing calls -----------------------------------------------
 
+// --- Reconciling missed webhooks ---------------------------------
+
+export interface ReconcileResult {
+  scanned: number;
+  ingested: number;
+  alreadyPresent: number;
+  otherPoll: number;
+}
+
+// A webhook Retell never delivers — a deploy mid-call, a timeout, an outage, an
+// unpublished agent draft — silently drops a finished interview from the
+// results, which for a poll means quietly undercounting. So pull the agent's
+// recent calls and ingest any this poll has no row for, through the same path
+// the webhook uses. Idempotent: upsertPollCall keys on the unique retellCallId.
+export async function reconcilePollCalls(poll: Poll, limit = 200): Promise<ReconcileResult> {
+  const agentId = poll.retellAgentId ?? process.env.RETELL_AGENT_ID;
+  const calls = await retellApi<RetellCall[]>("POST", "/v2/list-calls", {
+    ...(agentId ? { filter_criteria: { agent_id: [agentId] } } : {}),
+    limit,
+    sort_order: "descending",
+  });
+
+  const result: ReconcileResult = { scanned: 0, ingested: 0, alreadyPresent: 0, otherPoll: 0 };
+  for (const call of Array.isArray(calls) ? calls : []) {
+    if (!call?.call_id) continue;
+    result.scanned += 1;
+
+    // Only calls that say they belong to this poll. Falling back to the agent
+    // id here would hoover up unrelated calls that happen to share an agent.
+    if ((call.metadata as { poll_id?: string } | undefined)?.poll_id !== poll.id) {
+      result.otherPoll += 1;
+      continue;
+    }
+    if (await prisma.pollCall.findUnique({ where: { retellCallId: call.call_id } })) {
+      result.alreadyPresent += 1;
+      continue;
+    }
+
+    // call_analyzed carries the analysis fields; without them call_ended still
+    // records the call, its transcript and its responses.
+    await handleWebhookEvent(call.call_analysis ? "call_analyzed" : "call_ended", call);
+    result.ingested += 1;
+  }
+  return result;
+}
+
 export class DoNotCallError extends Error {}
 
 // Cayman has no daylight saving, so this is always UTC-5.
@@ -278,10 +324,43 @@ function fromNumberFor(poll: Poll): string {
   return fromNumber;
 }
 
+// The Retell agent's prompt reads one {{survey_script}} block and calls the
+// topic {{survey_topic}}, while the admin edits the questions as three separate
+// variables — which results.ts also parses to recover each question's wording.
+// So derive what the prompt asks for instead of renaming what everything else
+// depends on. An explicit value on the poll always wins, so a one-off script
+// can still be pasted straight in.
+function derivePromptVariables(variables: Record<string, string>): Record<string, string> {
+  const section = (heading: string, body?: string): string[] =>
+    body?.trim() ? [heading, body.trim()] : [];
+
+  const derived: Record<string, string> = {
+    survey_script: [
+      ...section(
+        "Screening — ask these first. If the respondent does not qualify, thank them politely and end the call.",
+        variables.screening_questions
+      ),
+      ...section("Survey questions — ask in order, word for word.", variables.survey_questions),
+      ...section("Demographic questions — ask these last.", variables.demographic_questions),
+    ].join("\n\n"),
+    survey_topic: variables.poll_topic ?? "",
+    // The prompt handles this exact wording: it then says numbers are called at
+    // random rather than inventing an answer.
+    number_source: "not provided",
+  };
+
+  for (const [key, value] of Object.entries(derived)) {
+    if (!variables[key]?.trim()) variables[key] = value;
+  }
+  return variables;
+}
+
 // One outbound call, in the shape both create-phone-call and batch tasks take.
 function callTask(poll: Poll, toNumber: string, batchId?: string) {
-  const variables = Object.fromEntries(
-    Object.entries((poll.variables ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+  const variables = derivePromptVariables(
+    Object.fromEntries(
+      Object.entries((poll.variables ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+    )
   );
   return {
     to_number: normalizePhone(toNumber),
@@ -357,9 +436,11 @@ export async function createPollBatch(
 
   const byHash = new Map<string, string>();
   for (const raw of rawNumbers) {
-    if (raw.replace(/\D/g, "").length < 7) continue;
-    const number = normalizePhone(raw);
-    if (!/^\+\d{8,15}$/.test(number)) continue;
+    // Strict here: a number that isn't plainly Cayman or NANP is a typo, and
+    // dialling it would place a real international call to someone who never
+    // consented. It counts towards skippedInvalid below instead.
+    const number = tryNormalizePhone(raw);
+    if (!number) continue;
     byHash.set(hashPhone(number), number);
   }
   const skippedInvalid = rawNumbers.length - byHash.size;

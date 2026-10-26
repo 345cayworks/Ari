@@ -15,11 +15,13 @@ export function minutesToTime(m: number): string {
 
 // Dynamic variables an admin edits per poll, in the order the prompt uses them.
 export const POLL_VARIABLES = [
+  { key: "company_name", label: "Company name (read aloud on every call)", rows: 1 },
   { key: "poll_name", label: "Poll name (read to respondents)", rows: 1 },
   { key: "poll_topic", label: "Topic, e.g. \"the cost of living\"", rows: 1 },
   { key: "estimated_minutes", label: "Estimated minutes", rows: 1 },
   { key: "agent_name", label: "Agent name", rows: 1 },
   { key: "sponsor_disclosure", label: "Sponsor disclosure (blank = independent)", rows: 2 },
+  { key: "number_source", label: "How numbers were obtained (blank = \"not provided\")", rows: 2 },
   { key: "incentive_text", label: "Incentive (usually blank)", rows: 1 },
   { key: "screening_questions", label: "Screening questions (S1, S2, ...)", rows: 4 },
   { key: "survey_questions", label: "Survey questions (Q1, Q2, ...)", rows: 12 },

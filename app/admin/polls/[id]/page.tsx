@@ -16,7 +16,14 @@ import {
   POLL_VARIABLES,
   WEEKDAYS,
 } from "@/lib/polling/results";
-import { createBatch, placeCalls, resolveCallback, setPollStatus, updatePoll } from "../actions";
+import {
+  createBatch,
+  placeCalls,
+  reconcileCalls,
+  resolveCallback,
+  setPollStatus,
+  updatePoll,
+} from "../actions";
 import { Banner } from "../banner";
 import { StatusBadge } from "../status-badge";
 import { WeightingTab } from "./weighting-tab";
@@ -296,6 +303,9 @@ async function CallsTab({
           {searchParams.placed} call(s) placed
           {Number(searchParams.blocked) ? `, ${searchParams.blocked} skipped (do not call)` : ""}
           {Number(searchParams.failed) ? `, ${searchParams.failed} failed` : ""}
+          {Number(searchParams.invalid)
+            ? `, ${searchParams.invalid} rejected (not a Cayman or North American number)`
+            : ""}
           {Number(searchParams.skipped)
             ? `, ${searchParams.skipped} not sent (limit is ${MAX_CALLS_PER_SUBMIT} per batch)`
             : ""}
@@ -313,11 +323,36 @@ async function CallsTab({
         </Banner>
       )}
 
+      {searchParams.reconciled !== undefined && (
+        <Banner tone="ok">
+          {Number(searchParams.reconciled)
+            ? `${searchParams.reconciled} call(s) pulled in from Retell`
+            : "Nothing missing"}
+          {` — ${searchParams.scanned} recent call(s) checked, ${searchParams.present} already here.`}
+        </Banner>
+      )}
+
       {!active && (
         <p className="text-sm text-accent-deep">
           Activate this poll on the Setup tab before placing calls.
         </p>
       )}
+
+      {/* Retell can fail to deliver a webhook, which silently drops a finished
+          interview from the results. This pulls those in on demand. */}
+      <form action={reconcileCalls} className="card flex flex-wrap items-center gap-4">
+        <input type="hidden" name="pollId" value={poll.id} />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-lg font-semibold">Check for missed calls</h2>
+          <p className="mt-1 text-sm text-ink/60">
+            Compares this poll&rsquo;s recent calls at Retell against the ones recorded here and
+            ingests anything missing. Safe to run at any time.
+          </p>
+        </div>
+        <button type="submit" className="btn-secondary shrink-0">
+          Check now
+        </button>
+      </form>
 
       <form key={`b${searchParams.batch}`} action={createBatch} className="card space-y-5">
         <input type="hidden" name="pollId" value={poll.id} />
