@@ -1,177 +1,141 @@
 # Handover: polling platform on Ari
 
-Last updated 2026-10-25. Branch `claude/stoic-tesla-2tUY0` on `345cayworks/ari`, all work pushed. No pull request opened yet.
+Last updated 2026-10-25, third session. Branch `claude/stoic-tesla-2tUY0` on
+`345cayworks/ari`. No pull request opened yet — the user has not asked.
+
+**It is deployed and working.** Canonical URL
+**https://polling.cayworks.net**; `https://ari.delicate-wood-499a.workers.dev`
+still serves as a fallback and `workers_dev` is deliberately kept on.
 
 ## Goal
 
-A polling company for the Cayman Islands, with AI voice interviewers on **Retell** calling respondents. It's built into Ari, the Cayworks Next.js app, as a tenant-scoped "Polls" module in the admin dashboard. It's being moved from Netlify to **Cloudflare Workers**.
+A polling company for the Cayman Islands, with AI voice interviewers on
+**Retell** calling respondents. Built into Ari, the Cayworks Next.js app, as a
+tenant-scoped "Polls" module in the admin dashboard, running on **Cloudflare
+Workers**.
 
 ## Status
 
-| Done | Commit |
+Everything below was verified against the live deployment, not just built:
+
+| Working | Evidence |
 |---|---|
-| Retell in-call functions and post-call analysis, webhook, sync script, agent prompt | `cebe0da` |
-| Polls admin (results, calls, setup, CSV) and the `/admin/login` redirect-loop fix | `da535fd` |
-| Retell batch calling (CSV upload, Cayman calling hours, do-not-call and already-called filtering, progress) | `24e9e17` |
-| Weighting to population targets (raking, presets, diagnostics) | `0783ff1` |
-| Port to Cloudflare Workers (Next 15.5.28, React 19, Prisma 6 + adapter-pg, OpenNext) | `bdd6880` |
-| Init migration for the whole schema — 17 tables, 9 enums, verified zero drift | `ca8aee0` |
-| Auth.js `trustHost` — login returned 500 `UntrustedHost` on Workers | `d305800` |
-| Default models moved to the Claude 5 family; cost table corrected | `8490487` |
-| `ARI_MODEL` set to Sonnet 5.5 (user's choice over Opus 5.5) | `014f97f` |
-| `scripts/retell-create-agent.ts` — nothing in the repo could create an agent | `3897b47` |
+| Neon schema | `prisma migrate deploy` applied `20261025043722_init`; `migrate status` says up to date |
+| Seed | tenant `founder`, SuperAdmin `info@cayworks.com`, Telegram ID `7683767594` linked |
+| Admin login | user logged in; a wrong key is rejected with no session cookie |
+| Database from the Worker | `/api/telegram/webhook` returns `{"ok":true}` on a lookup |
+| Retell agent | `retell-llm`, voice `retell-Cimo`, 4 tools and 13 analysis fields pointed at the Worker |
+| Caller number | `+13452331702`, type `custom` (SIP trunk) — a `retell-twilio` number could only call the US |
+| A complete interview | 153 s call, consent, all 6 questions asked, 6 `PollResponse` rows, outcome `COMPLETED` |
+| GA4 | `G-FL490J7JVX` inlined; verified in the served HTML |
+| Telegram webhook | registered at the custom domain, no delivery errors |
 
-Each step was tested end to end against a throwaway Postgres, a mock Retell API and Playwright. The Cloudflare port was also tested inside workerd (`wrangler dev`), including 30 concurrent requests. Typecheck and build pass. **Nothing has run against a real Retell account, real Neon database, or real Cloudflare deploy.** The 2026-10-25 session added the three commits above and verified login end to end against the production build (`NODE_ENV=production`, csrf 200, master key returns a SUPER_ADMIN session, wrong key rejected). The Claude 5 model switch is **not** verified against the live API — no `ANTHROPIC_API_KEY` in the sandbox.
+**Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
+Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
+Telegram message will do it; `/start` and `/whoami` return before the model is
+called.
 
-## Next steps (in order)
+## The three faults a real deploy exposed
 
-Decisions already taken with the user: **`prisma migrate deploy`** using the
-committed init migration (not `db push`); **no Hyperdrive** on the first deploy
-(`lib/db.ts` picks it up later if the binding appears); `ARI_MODEL` =
-**`claude-sonnet-5-5`**; the Retell in-call model = **`claude-5.5-sonnet`** and
-language **`en-US`** (already the defaults in `retell-create-agent.ts`, so run
-it without `--model` or `--language`).
+The previous session's `wrangler dev` tests passed and the first real deploy
+still failed three times. All three were export-condition and file-tracing
+problems, and all three are fixed — this is the most valuable thing in this
+document.
 
-Verified offline on this HEAD (2026-10-25): `npm run typecheck`, `npm run
-build`, `npx opennextjs-cloudflare build`, and `wrangler deploy --dry-run` —
-**2224 KiB gzipped** against the 3 MB free-plan limit, both bindings
-resolving. The build is deploy-ready; only network access is missing.
+1. **`@anthropic-ai/sdk` runtime shim.** Next traced it under the `node`
+   condition and copied `_shims/auto/runtime-node.mjs`; OpenNext bundles with
+   `workerd`, which wants `_shims/auto/runtime.mjs`. Build failed to resolve it.
+   Fixed by naming the tree in `outputFileTracingIncludes`.
+2. **Prisma had no usable query engine.** `prisma generate` emitted a native
+   engine for the build machine (`query_engine-windows.dll.node`), which
+   workerd cannot execute, and the WASM files were never traced in. `binaryTargets`
+   cannot fix this. Fixed with `engineType = "client"` in the generator (the
+   Rust-free client) plus tracing `.prisma/client/**`.
+3. **The bundler always picks Prisma's Node entry point.** `bundle-server.js`
+   runs esbuild with `platform: "node"` *and* `conditions: ["workerd"]`, and
+   esbuild honours whichever the package lists first — Prisma lists `node`
+   first. So `lib/db.ts` imports **`@prisma/client/wasm`**, whose subpath has no
+   `node`/`workerd` branching. Do not "tidy" that import back.
 
-1. **Deploy to Cloudflare.** Worker name `ari` confirmed free (39 Workers on the
-   account; `ari-crm-api` is unrelated). The Cloudflare connector cannot deploy
-   or set secrets, and `wrangler login` needs a browser the sandbox lacks, so
-   deploy with an API token in the environment.
-   - Read the credentials from the environment variables listed below.
-   - Read-only first: `prisma migrate diff --from-url "$NEON_DIRECT_URL"
-     --to-schema-datamodel prisma/schema.prisma --script` to show the user the
-     exact DDL and whether that database is empty. **Confirm before applying.**
-   - `DATABASE_URL="$NEON_DIRECT_URL" npx prisma migrate deploy`
-   - **Then seed.** `authorize()` in `lib/auth.ts` requires the user row to
-     already exist, so without `npm run db:seed` the master key logs in to
-     nothing. The seed also reads `ALLOWED_TELEGRAM_USER_IDS` to link the bot.
-   - `npx wrangler secret put <NAME>` for each secret, then `npm run deploy`,
-     then set `NEXTAUTH_URL` and `PUBLIC_BASE_URL` to the Worker URL and deploy
-     again.
-   - `NEXT_PUBLIC_GA4_MEASUREMENT_ID` and `NEXT_PUBLIC_META_PIXEL_ID` are
-     inlined at **build** time, not Worker secrets — they must be set before
-     the build or they do nothing.
-2. **Connect Retell.** `npm run retell:sync` pushes tools, analysis fields and
-   the webhook URL to `RETELL_AGENT_ID`; `--prompt` also pushes
-   `retell/poll-agent-prompt.md`. It overwrites agent settings — show the user
-   the diff first.
-3. **Caller number — SIP trunk is connected** (user, 2026-10-25), so this is no
-   longer a blocker. Retell-purchased numbers can only dial US numbers and
-   +1 345 isn't US, which is why the number is imported over a trunk instead.
-   What remains:
-   - Set `RETELL_FROM_NUMBER` to the imported number in E.164 (`+1345…`), in
-     `.env.local` and as a Worker secret. `Poll.fromNumber` overrides it
-     per poll.
-   - Confirm Retell lists it: `GET /list-phone-numbers`.
-   - **No agent binding is needed.** `callTask()` in `lib/polling/calls.ts`
-     sends `override_agent_id` on every call, single and batch, so the call
-     uses `RETELL_FROM_NUMBER` with our agent whatever the number is bound to
-     in the dashboard. Binding it as the outbound agent anyway does no harm and
-     makes dashboard test calls work.
-   - Numbers are normalised by `lib/polling/phone.ts`: 7 digits are treated as
-     +1 345, and batches drop anything that isn't `^\+\d{8,15}$`.
-4. **Re-register the Telegram webhook** at the new URL (Ari's original feature).
-5. **Smoke-test the Claude 5 switch** by sending a Telegram message, which
-   exercises `lib/ari/brain.ts`. Watch for truncation: thinking is always on for
-   Opus 5.5 and counts against `max_tokens`, now 4096.
-6. **Open a PR** when the user asks. They haven't yet.
+`driverAdapters` and `queryCompiler` are **not** the fix: 6.19.3 warns both are
+deprecated and on by default.
 
-## Blocked on (2026-10-25, second session)
+## How to work on this locally
 
-**Blockers 1 and 2 below are specific to the Claude Code cloud sandbox. None
-of them exist in a local session** — a local machine reaches Retell,
-Cloudflare, Neon and Telegram normally, `wrangler login` can open a browser,
-and Postgres over TCP 5432 just works. Running this locally is the shortest
-path to a first deploy. Locally, the scripts read `.env.local` (both retell
-scripts use `--env-file-if-exists`), so copy `.env.example` to `.env.local`
-and fill it in; `DIRECT_URL` is the Neon host **without** `-pooler` and
-`DATABASE_URL` is the one **with** it.
+`npm run preview` runs the real Worker in workerd and reads `.dev.vars`
+(gitignored, written from `.env.local`). It is the only faithful local
+environment — a build plus probe is about three minutes, against five for a
+deploy, and it is how faults 2 and 3 were found. `next dev` may now break,
+since it would load the WASM client under Node; use `preview`.
 
+`.env.local` (gitignored) holds the real values. Note the names: the code reads
+`DATABASE_URL` (the `-pooler` host) and `DIRECT_URL` (without `-pooler`), not
+the `NEON_*` names the cloud environment used.
 
-1. **Network allowlist.** The sandbox's policy denied `api.retellai.com`,
-   `api.cloudflare.com`, `api.telegram.org`, `workers.cloudflare.com` and the
-   Neon host — DNS does not even resolve. The user added them under Allowed
-   domains, but **a policy change only takes effect in a new session**, like the
-   secrets. Re-test first thing:
-   `curl -o /dev/null -w '%{http_code}\n' https://api.retellai.com/`
-   and `getaddrinfo` on the Neon host. `$HTTPS_PROXY/__agentproxy/status`
-   lists recent denials under `recentRelayFailures`.
-2. **Postgres may still not work even with the Neon host allowed.** Prisma
-   connects over raw TCP 5432, which an HTTP CONNECT proxy does not carry. If
-   DNS resolves but 5432 does not open, the fallbacks are the user running
-   `prisma migrate deploy` locally, or applying
-   `prisma/migrations/20261025043722_init/migration.sql` over Neon's HTTP SQL
-   endpoint and inserting the matching `_prisma_migrations` row by hand.
-3. ~~Neon variables inverted~~ **Fixed 2026-10-25.** `NEON_DIRECT_URL` is now
-   the host without `-pooler` and `NEON_DATABASE_URL` the one with it. Worth
-   re-asserting before setting the Worker secret: this pair has been wrong in
-   both directions once each.
-3b. **The agent exists** — the user created it and `RETELL_AGENT_ID` is set in
-   the environment (don't hardcode it here; it would go stale if the agent is
-   recreated). **Check its response engine before trusting `retell:sync`:**
-   `GET /get-agent/$RETELL_AGENT_ID` and confirm `response_engine.type` is
-   `retell-llm`. `scripts/retell-sync.ts` throws on anything else, and Retell's
-   AI agent builder tends to produce **Conversation Flow** agents, which it
-   cannot sync. If that is what exists, recreate it with
-   `npm run retell:create-agent` (which always makes a retell-llm agent) or
-   switch it to Single Prompt in the dashboard.
+## Next steps
 
-4. **`retell/poll-agent-prompt.md` still says `[COMPANY NAME]`, twice** —
-   including in the line the agent speaks when asked who is calling. A live
-   interviewer would read the placeholder aloud. Waiting on the company name;
-   fix the prompt before any real call, then `retell:sync -- --prompt`.
-5. **Voice not chosen.** Run `npm run retell:create-agent -- --list-voices` and
-   pick with the user; it is the most audible choice in the system.
-6. **Environment variables.** All present in the sandbox except
-   `ANTHROPIC_API_KEY` and `ALLOWED_TELEGRAM_USER_IDS`, which never appeared
-   across several fresh boots while every other edit landed — cause unknown.
-   `RETELL_FROM_NUMBER` is `+1345…` (it was briefly set to a US +1 601 number;
-   worth re-checking it is the trunk's Cayman number). The four generated
-   secrets are set and match the values handed to the user. `GROQ_API_KEY` is
-   set, though voice notes now degrade gracefully without it.
+1. **Publish the agent in Retell.** It reports `is_published: false`, and
+   webhooks have never been delivered on their own: three app-placed calls
+   produced no `PollCall` row until events were replayed by hand. Also set the
+   same URL as the **account-level** webhook in Retell's settings. Until then
+   use the button in step 2.
+2. **"Check for missed calls"** on a poll's Calls tab (`reconcilePollCalls`)
+   pulls in calls Retell never delivered a webhook for. Idempotent. Five of the
+   test poll's six calls were still uningested when it shipped.
+3. **Smoke-test `brain.ts`** with a plain Telegram message. `ARI_MODEL` is
+   `claude-sonnet-5-5`; watch for truncation, `max_tokens` is 4096.
+4. **Delete the test poll** `TEST — Cayman Pulse (safe to delete)` when done.
+5. **`{{agent_name}}`** now appears in the live greeting and Role line. The
+   value comes from the poll's `agent_name` field, currently "Nina" — the
+   Retell dashboard's own agent-name field is an internal label and is never
+   read aloud.
 
-   Note on propagation, learned the hard way: environment **variable** edits do
-   reach a freshly booted container, but the **network allowlist** edits did
-   not, across several fresh boots. Same boot, different outcome — so a blocked
-   host is evidence about the allowlist itself, not about timing. Allowed
-   domains only applies under the *Limited* access level, and entries want
-   bare hostnames.
+## The prompt: the dashboard one is live, not the repo file
 
-## Environment variables the next session needs
+A direction change, decided with the user this session. The agent runs a prompt
+written in the Retell dashboard, which reads `{{company_name}}`,
+`{{survey_topic}}`, `{{survey_script}}`, `{{sponsor_disclosure}}` and
+`{{number_source}}`. `retell/poll-agent-prompt.md` expects a completely
+different set (`{{survey_questions}}`, `{{time_of_day}}`, …) — only
+`sponsor_disclosure` overlaps.
 
-Set in the cloud environment's settings, not pasted into chat; **a new session
-is needed to pick them up**. The Neon strings are deliberately *not* named
-`DATABASE_URL` / `DIRECT_URL`, so no stray test or `db push` can reach
-production.
+The first test calls had no questions because nothing supplied
+`{{survey_script}}`. `derivePromptVariables()` in `lib/polling/calls.ts` now
+builds it from the three question variables, maps `survey_topic` from
+`poll_topic`, and defaults `number_source` to "not provided" (wording the
+prompt handles). An explicit value on the poll always wins. The three question
+variables are **not** renamed, because `results.ts` parses them to recover each
+question's wording.
 
-| Variable | Notes |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | Workers Scripts: Edit + Account Settings: Read |
-| `CLOUDFLARE_ACCOUNT_ID` | not secret |
-| `NEON_DIRECT_URL` | direct, non-pooled — migrations |
-| `NEON_DATABASE_URL` | the `-pooler` string — Worker runtime |
-| `ANTHROPIC_API_KEY` | also unblocks a live model smoke test |
-| `GROQ_API_KEY` | voice-note transcription |
-| `TELEGRAM_BOT_TOKEN` | |
-| `RETELL_API_KEY` | also verifies webhook signatures |
-| `RETELL_AGENT_ID` | not secret (`agent_...`) |
-| `ARI_TELEGRAM_USER_ID` | numeric, for `ALLOWED_TELEGRAM_USER_IDS` |
-| `NEXTAUTH_SECRET`, `SUPERADMIN_MASTER_KEY`, `PHONE_HASH_SECRET`, `TELEGRAM_WEBHOOK_SECRET` | generated 2026-10-25 and given to the user; re-add them here rather than regenerating — **`PHONE_HASH_SECRET` can never change once any poll call exists** |
+The dashboard prompt was kept because it needs no company phone or website,
+takes the company as a variable, and has no `{{time_of_day}}` bug.
+**`retell:sync --prompt` would overwrite it with the repo file and the agent
+would lose its questions — never run it.** Running `retell:sync` *without*
+`--prompt` is safe and was verified not to touch `general_prompt` or
+`begin_message`.
+
+## Open risks
+
+- **`{{time_of_day}}`** in the repo prompt is supplied by nothing. Moot while
+  the dashboard prompt is live; it would be a live bug if the file is ever pushed.
+- **`PHONE_HASH_SECRET` can never change** now that poll calls exist.
+- Two credentials were exposed in a session transcript and should be rotated if
+  that has not been done: the Neon `neondb_owner` password, and a Cloudflare API
+  token (commented out in `.env.local`; it had no Workers access to this account
+  anyway).
+- Weighting presets still come from search summaries, not primary sources. Ask
+  the user to verify before publishing any weighted result.
 
 ## Map of the code
 
 - `lib/polling/config.ts`: Retell tool definitions (`record_answer`, `add_to_do_not_call`, `schedule_callback`, `end_call`, optional `transfer_call`) and post-call analysis fields. This is the single source of truth for `scripts/retell-sync.ts`.
 - `lib/polling/retell.ts`: Retell API helper and signature check (`x-retell-signature`, `v=<ms>,d=<hex>`, HMAC-SHA256(apiKey, body+ms), 5-minute window). It matches `retell-sdk` 6.2.12's `verify`.
-- `lib/polling/calls.ts`: links calls to polls (metadata `poll_id` / `batch_id`, or dynamic variable `poll_id`, or agent ID). Also function handlers, webhook ingestion, `placePollCall`, and `createPollBatch` (chunks of 1,000, sent in parallel, timezone `America/Cayman`).
-- `lib/polling/phone.ts`: E.164 normalising (7 digits are treated as +1 345) and HMAC phone hashing (`PHONE_HASH_SECRET`, never change it).
-- `lib/polling/results.ts`: stats, tallies (option order comes from "(A / B / C)" in the question text), limits.
+- `lib/polling/calls.ts`: links calls to polls (metadata `poll_id` / `batch_id`, or dynamic variable `poll_id`, or agent ID). Also function handlers, webhook ingestion, `derivePromptVariables`, `placePollCall`, `createPollBatch` (chunks of 1,000, parallel, timezone `America/Cayman`) and `reconcilePollCalls`.
+- `lib/polling/phone.ts`: **`tryNormalizePhone`** is strict (7-digit Cayman, or NANP with area and exchange codes starting 2-9) and returns `null`; it gates the two places calls are placed. `normalizePhone` stays lenient for recording and hashing inbound numbers, so ingestion can't be broken by an odd number. Before this, an 11-digit typo became `+33453249000` and was dialled — France.
+- `lib/polling/results.ts`: `POLL_VARIABLES` (the admin setup form is generated from this list), stats, tallies (option order comes from "(A / B / C)" in the question text), limits.
 - `lib/polling/weighting.ts`: raking with trimming; `lib/polling/census.ts`: presets; `lib/polling/weighted.ts`: shared loader for results, weighting and CSV.
 - `app/api/retell/{webhook,functions}/route.ts`, `app/admin/polls/**`, `app/(auth)/admin/login`.
-- `lib/db.ts`: Prisma through a Proxy. It creates **one client per request on Workers** (keyed by `getCloudflareContext().ctx`, using Hyperdrive when bound) and one shared client on Node.
+- `lib/db.ts`: Prisma through a Proxy, importing **`@prisma/client/wasm`** (see fault 3). One client per request on Workers (keyed by `getCloudflareContext().ctx`, using Hyperdrive when bound), one shared client on Node.
 - Prisma models: `Poll` (`variables`, `weighting` JSON), `PollCall`, `PollResponse`, `DoNotCall`, `PollCallback`, `PollBatch`.
 
 ## Decisions and why
@@ -180,31 +144,70 @@ production.
 - Phone numbers are stored only as HMACs, except `PollCallback.phoneNumber`, which is cleared once the callback is handled.
 - Next 15.5.28 is required because `@opennextjs/cloudflare` 1.20 needs Next ≥15.5.28.
 - The database uses Prisma 6 (not 7) with `@prisma/adapter-pg` (not Neon HTTP), so it can use Hyperdrive and be tested locally in workerd.
+- A poll cannot be activated without `survey_questions` **and** `company_name`: the company name is read aloud in the opening line, and a blank one would have every respondent hear "calling on behalf of" and a gap.
 - Weighting presets cover only two district sets:
   - Electors by area, from the Elections Office register effective 1 Oct 2026. Bodden Town is derived as the total minus the other areas.
   - Residents by district, from the 2021 Census, Section 1.2 (base 68,811). Sister Islands is derived the same way.
 
   Both came from **search summaries**: `eso.ky` and the Elections portal are blocked from the sandbox. Tell the user to verify them. Age, sex and status targets are deliberately not preset.
 
-## Gotchas for the next session
+## Gotchas
 
-- **`pkill -f <pattern>` kills your own shell** when the pattern appears in the command line (exit 144). Kill by PID from `ps` instead.
-- Test Postgres: `/usr/lib/postgresql/16/bin/initdb` must run as the `postgres` user in a directory it can reach (e.g. `/var/lib/postgresql/ari_test`). The scratchpad's parent directories aren't readable by `postgres`.
-- `docs.retellai.com`, `eso.ky` and Wikipedia are blocked. npm works, so read Retell's API from the `retell-sdk` tarball.
-- Wrangler logs "Request was cancelled" at startup because it can't fetch `Request.cf` in the sandbox. This is harmless.
-- `next dev` runs `initOpenNextCloudflareForDev()` (in `next.config.ts`). `npm run preview` runs the real Worker locally and reads secrets from `.dev.vars` (gitignored).
-- The Worker is about 2.2 MB gzipped (free plan limit 3 MB, paid 10 MB).
+Deployment and tooling, all learned the hard way this session:
+
+- **Adding a `routes` entry to `wrangler.jsonc` turns `workers_dev` off by
+  default.** This 404'd the app and both webhooks mid-session. `workers_dev:
+  true` is now explicit — keep it until nothing points at the `workers.dev` URL.
+- **Wrangler reads `.env.local` and prefers a `CLOUDFLARE_API_TOKEN` found
+  there over its own `wrangler login`.** A token with no Workers access to this
+  account silently broke every deploy. It is commented out; leave it that way.
+- **The Prisma CLI reads `.env`, never `.env.local`**, and `db:seed` has no
+  `--env-file-if-exists` flag unlike the two retell scripts. Run them as
+  `node --env-file=.env.local node_modules/prisma/build/index.js migrate deploy`
+  and `node --env-file=.env.local --import tsx prisma/seed.ts`. Worth fixing in
+  `package.json` one day.
+- `NEXT_PUBLIC_*` variables are inlined at **build** time from `.env.local`, so
+  changing GA4 or the Meta Pixel needs a rebuild, not a secret update.
+- Secrets take effect on their own — `wrangler secret bulk` creates a new Worker
+  version, so no redeploy is needed after setting them. Pipe the JSON over
+  stdin to keep values out of argv and shell history.
+- `wrangler tail` takes the Worker name as a **positional** argument, and with
+  its output redirected on Windows it dies on a libuv assertion. Run it in a
+  terminal with a TTY.
+- The Worker is **2.2 MB gzipped** against the 3 MB free-plan limit — Prisma's
+  WASM query compiler is 1.95 MB of that. Roughly 850 KB of headroom.
+- A new Cloudflare custom domain was serving within seconds; an eight-minute
+  "not serving" wait turned out to be the **local** resolver negative-caching
+  the name from before it existed. Verify with `nslookup <host> 8.8.8.8`, or by
+  connecting to the edge IP with the right SNI, before blaming Cloudflare.
+
+Application behaviour:
+
 - **Auth.js trusts the request Host only** when `AUTH_URL`, `AUTH_TRUST_HOST`,
   `VERCEL` or `CF_PAGES` is set, or outside production — and it reads
   `AUTH_URL`, never `NEXTAUTH_URL`. Hence `trustHost: true` in `lib/auth.ts`.
   Don't remove it; login 500s on Workers without it.
+- **`signIn` in a server action throws instead of redirecting.** An uncaught
+  `AuthError` renders Next's generic "server-side exception" page, so a mistyped
+  key looked like a broken deployment for an hour. The login page now catches
+  **only** `CredentialsSignin` and rethrows everything else — including
+  `CallbackRouteError`, which is how an error thrown inside `authorize()`
+  arrives. Keep that distinction: it is what made the Prisma fault visible.
+- `authorize()` compares the master key with `!==` and **no trim**, so a
+  trailing space from a copy-paste fails. The email comparison is lowercased and
+  trimmed.
 - `@anthropic-ai/sdk` is pinned at **0.40.1**, which predates
   `output_config.effort`, so thinking depth can't be tuned. A chat route like
-  Ari's wants `effort: "low"`. Upgrading the SDK is a major-version bump — it
-  was deliberately left out of the pre-deploy commits.
-- No `ANTHROPIC_API_KEY` in the sandbox, so `lib/ari/brain.ts` has never been
-  run against the live API.
+  Ari's wants `effort: "low"`. Upgrading is a major-version bump and would also
+  retire fault 1's workaround.
 
 ## Prompt to start the next session
 
-> Continue the Ari polling work on branch `claude/stoic-tesla-2tUY0` of `345cayworks/ari`. Read `docs/HANDOVER.md` first, then re-test the hosts under "Blocked on" — the domains and secrets were added but needed a new session. If Retell is reachable, create the polling agent (`npm run retell:create-agent -- --list-voices` first, then pick a voice with me) and give me the agent ID. Confirm with me before the migration, the deploy, and anything that overwrites Retell agent settings.
+> Continue the Ari polling work on branch `claude/stoic-tesla-2tUY0` of
+> `345cayworks/ari`. Read `docs/HANDOVER.md` first — it is current as of the
+> third session, when the app went live at https://polling.cayworks.net. The
+> immediate jobs are: publish the Retell agent so webhooks are delivered without
+> the reconcile button, and smoke-test `lib/ari/brain.ts` by sending the bot a
+> plain Telegram message, which has still never run against the live Anthropic
+> API. Use `npm run preview` rather than `next dev`, and never run
+> `retell:sync --prompt`.
