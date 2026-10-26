@@ -13,9 +13,17 @@ import {
   MAX_BATCH_NUMBERS,
   MAX_CALLS_PER_SUBMIT,
   minutesToTime,
+  parseQuestionText,
   POLL_VARIABLES,
   WEEKDAYS,
 } from "@/lib/polling/results";
+import {
+  DisclosureBlock,
+  DispositionChart,
+  PublicationGate,
+  publicationBlockers,
+  QuestionChart,
+} from "@/components/poll-charts";
 import {
   createBatch,
   placeCalls,
@@ -112,10 +120,37 @@ async function ResultsTab({
 }): Promise<JSX.Element> {
   const calls = await prisma.pollCall.findMany({
     where: { pollId: poll.id },
-    select: { outcome: true, durationMs: true, analysis: true },
+    select: { outcome: true, durationMs: true, analysis: true, startedAt: true },
   });
   const stats = computeStats(calls);
   const { config, weighting, tallies } = await loadPollResults(poll, { includePartial, weighted });
+
+  // Buckets for the disposition chart. "Not reached" is the remainder, so the
+  // stack always adds up to what was dialled rather than quietly dropping
+  // outcomes the buckets don't name.
+  const named = stats.completed + stats.partial + stats.refused + stats.screenedOut + stats.doNotCall;
+  const buckets = {
+    completed: stats.completed,
+    partial: stats.partial,
+    refused: stats.refused + stats.screenedOut,
+    notReached: Math.max(0, stats.dialled - named),
+    doNotCall: stats.doNotCall,
+  };
+
+  const answered = weighting ? weighting.n : tallies[0]?.total ?? 0;
+  const blockers = publicationBlockers(answered, weighting);
+  // Margins come off the effective sample when weighted, the raw count otherwise.
+  const effectiveBase = weighting ? weighting.effectiveN : answered;
+
+  const started = calls.map((c) => c.startedAt).filter((d): d is Date => d !== null);
+  const questionText = parseQuestionText(poll.variables as Record<string, unknown>);
+  const weightedTo = weighting
+    ? `Raked to ${config.targets
+        .filter((t) => t.categories.length >= 2)
+        .map((t) => t.label)
+        .join(" × ")}`
+    : "";
+  const vars = (poll.variables ?? {}) as Record<string, string>;
   const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : "—");
   const link = (overrides: { include?: boolean; weights?: boolean }) => {
     const q = new URLSearchParams({ tab: "results" });
@@ -127,6 +162,8 @@ async function ResultsTab({
 
   return (
     <div className="space-y-8">
+      <PublicationGate blockers={blockers} />
+
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
         <Stat label="Completed" value={stats.completed.toLocaleString()} />
         <Stat label="Dialled" value={stats.dialled.toLocaleString()} />
@@ -138,6 +175,10 @@ async function ResultsTab({
         <Stat label="Avg interview" value={formatSeconds(stats.avgCompletedSeconds)} />
       </div>
 
+      <DispositionChart buckets={buckets} />
+
+      {/* The detailed counts below double as the chart's table view, which the
+          relief rule requires for the sub-3:1 fills. */}
       <div className="card">
         <h2 className="text-sm font-semibold">Outcomes</h2>
         <dl className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 text-sm">
@@ -217,40 +258,37 @@ async function ResultsTab({
       ) : (
         <div className="space-y-4">
           {tallies.map((t) => (
-            <div key={t.questionId} className="card">
-              <p className="text-sm">
-                <span className="font-mono text-xs text-ink/50 mr-2">{t.questionId}</span>
-                <span className="font-medium">{t.text ?? ""}</span>
-              </p>
-              <p className="mt-0.5 text-xs text-ink/50">{t.total.toLocaleString()} answer{t.total === 1 ? "" : "s"}</p>
-              <ul className="mt-3 space-y-2">
-                {t.answers.slice(0, 12).map((a) => (
-                  <li key={a.answer} className="text-sm">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-ink/80">{a.answer}</span>
-                      <span className="shrink-0 tabular-nums text-ink/60">
-                        <span className="text-ink/40">n={a.count}</span> ·{" "}
-                        <span className="font-medium text-ink/80">{pct(a.weight, t.totalWeight)}</span>
-                      </span>
-                    </div>
-                    <div className="mt-1 h-1.5 rounded-full bg-sea-mist">
-                      <div
-                        className="h-1.5 rounded-full bg-sea"
-                        style={{ width: `${t.totalWeight ? (a.weight / t.totalWeight) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {t.answers.length > 12 && (
-                <p className="mt-2 text-xs text-ink/50">
-                  + {t.answers.length - 12} other answers (see CSV export)
-                </p>
-              )}
-            </div>
+            <QuestionChart
+              key={t.questionId}
+              tally={t}
+              weighted={Boolean(weighting)}
+              effectiveBase={effectiveBase}
+            />
           ))}
         </div>
       )}
+
+      <DisclosureBlock
+        facts={{
+          pollName: vars.poll_name || poll.name,
+          companyName: vars.company_name ?? "",
+          sponsor: vars.sponsor_disclosure ?? "",
+          topic: vars.poll_topic ?? "",
+          firstCall: started.length ? new Date(Math.min(...started.map((d) => d.getTime()))) : null,
+          lastCall: started.length ? new Date(Math.max(...started.map((d) => d.getTime()))) : null,
+          dialled: stats.dialled,
+          completed: stats.completed,
+          partial: stats.partial,
+          refused: stats.refused,
+          n: answered,
+          effectiveN: weighting ? weighting.effectiveN : null,
+          marginOfError: weighting ? weighting.marginOfError : null,
+          weightedTo,
+          questions: [...questionText.entries()]
+            .sort((a, b) => compareQuestionIds(a[0], b[0]))
+            .map(([id, text]) => ({ id, text })),
+        }}
+      />
     </div>
   );
 }
