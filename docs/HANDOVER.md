@@ -234,6 +234,20 @@ Deployment and tooling, all learned the hard way this session:
   "not serving" wait turned out to be the **local** resolver negative-caching
   the name from before it existed. Verify with `nslookup <host> 8.8.8.8`, or by
   connecting to the edge IP with the right SNI, before blaming Cloudflare.
+- **The WASM Prisma client does not work under Node.** Confirmed by running it:
+  a query through `lib/db.ts` outside the Worker fails with "The loaded wasm
+  module was unexpectedly `undefined` or `null` once loaded". So **nothing that
+  runs under Node may import `lib/db.ts`** — not `next dev`, not a script. That
+  means `lib/ari/brain.ts` and `lib/polling/calls.ts` cannot be exercised
+  locally at all; test them on the Worker. A script needing the database builds
+  its own client from `@prisma/client` (not `/wasm`) with a `PrismaPg` adapter,
+  the way `prisma/seed.ts` does.
+- A script run as `npx tsx foo.ts` gets **no `.env.local`** and no top-level
+  await (tsx treats `.ts` as CJS here). Use
+  `node --env-file=.env.local --import tsx foo.mts`. Without the env file,
+  `PrismaPg` is handed an undefined connection string, `pg` falls back to
+  localhost, and the failure reads `ECONNREFUSED` — which looks exactly like
+  the database being down rather than a missing flag.
 - **esbuild renames top-level identifiers**, so grepping the bundle for a
   function name to check a change shipped returns 0 and looks like a failed
   deploy. Grep for a string literal that exists only in the module instead.

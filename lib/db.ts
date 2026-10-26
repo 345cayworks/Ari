@@ -4,8 +4,20 @@
 // first, so the plain entry point always resolves to the Node client, which
 // reads its query compiler off a filesystem the Worker does not have. The
 // /wasm subpath has no node/workerd branching, so it resolves to the WASM
-// build and loads the compiler as a module import. Nothing under Node imports
-// this file except `next dev`; the scripts and the seed have their own client.
+// build and loads the compiler as a module import.
+//
+// The consequence, confirmed by running it: the WASM client does NOT work
+// under Node. A query fails with "The loaded wasm module was unexpectedly
+// `undefined` or `null` once loaded". So nothing that runs under Node may
+// import this file — not `next dev`, and not a script. Anything server-side
+// that needs the database outside the Worker must build its own client, the
+// way prisma/seed.ts does:
+//
+//   new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
+//
+// imported from "@prisma/client", not "@prisma/client/wasm". That rules out
+// testing lib/ari/brain.ts or lib/polling/calls.ts locally, since both reach
+// the database through this module — exercise them on the Worker instead.
 import { PrismaClient } from "@prisma/client/wasm";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
