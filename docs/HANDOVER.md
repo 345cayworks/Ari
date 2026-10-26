@@ -29,6 +29,9 @@ Everything below was verified against the live deployment, not just built:
 | A complete interview | 153 s call, consent, all 6 questions asked, 6 `PollResponse` rows, outcome `COMPLETED` |
 | GA4 | `G-FL490J7JVX` inlined; verified in the served HTML |
 | Telegram webhook | registered at the custom domain, no delivery errors |
+| Results charts and the publication gate | rendered and inspected in a browser; the gate fires on the test poll |
+| Question-set templates | four sets on the Setup tab, previewed on a throwaway poll |
+| Option rotation | 400-rotation test: scales only reverse, unordered options average dead centre, terminal options never move |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -84,8 +87,15 @@ the `NEON_*` names the cloud environment used.
    test poll's six calls were still uningested when it shipped.
 3. **Smoke-test `brain.ts`** with a plain Telegram message. `ARI_MODEL` is
    `claude-sonnet-5-5`; watch for truncation, `max_tokens` is 4096.
-4. **Delete the test poll** `TEST — Cayman Pulse (safe to delete)` when done.
-5. **`{{agent_name}}`** now appears in the live greeting and Role line. The
+4. **Check the first rotated call.** Its `PollCall.optionOrder` should hold the
+   order that respondent actually heard. The six calls from 25–26 October have
+   `null` there, correctly: they pre-date rotation. Don't compare a
+   pre-rotation wave against a post-rotation one without saying so — the first
+   option in each list will appear to lose a couple of points when nothing
+   moved.
+5. **Delete the test poll** `TEST — Cayman Pulse (safe to delete)` when done.
+   The `Cayman Life` poll beside it is the user's; leave it alone.
+6. **`{{agent_name}}`** now appears in the live greeting and Role line. The
    value comes from the poll's `agent_name` field, currently "Nina" — the
    Retell dashboard's own agent-name field is an internal label and is never
    read aloud.
@@ -114,6 +124,44 @@ would lose its questions — never run it.** Running `retell:sync` *without*
 `--prompt` is safe and was verified not to touch `general_prompt` or
 `begin_message`.
 
+## Polling quality: the rules the platform now enforces
+
+Three pieces added after the deploy, covering the three places a poll goes
+wrong. None of them is cosmetic; each stops a specific failure that is
+invisible in the output once it has happened.
+
+**Rotation stops the instrument biasing the answer** (`lib/polling/rotation.ts`).
+Reading the same option order on every call hands the first option a few points
+it has not earned, and the result looks exactly like opinion afterwards. It
+needed no prompt change — the prompt already says to read options in the order
+given, so `callTask` rotates the script it sends, which also means single and
+batch calls cannot drift apart. An ordered scale is **reversed** for a random
+half, never shuffled. An unordered list is permuted with terminal options
+(Don't know, Something else, Prefer not to say) pinned at the end. **Yes/No
+pairs are left alone**: the stem usually names them in order, so reversing the
+list puts the spoken question out of step. Only the survey block rotates;
+screeners must read identically and demographics are ordinal or a reference
+list. The order heard travels in call metadata to `PollCall.optionOrder`.
+
+**The publication gate stops a correct number being published misleadingly**
+(`publicationBlockers` in `components/poll-charts.tsx`). It refuses to call a
+result quotable when the sample is under 100, weighting did not converge, the
+design effect exceeds 2, or any respondent carries a weight above 5×. Every one
+of those signals already existed and was only ever a warning to scroll past.
+Per-question bases are flagged at 50 and 100 — a 600-person national sample
+leaves about a dozen respondents in the Sister Islands.
+
+**Templates stop a badly-worded question being asked at all**
+(`lib/polling/templates.ts`). Four sets, each shipping the reasons for its
+wording beside it, because a template that only fills boxes makes it easier to
+run a bad poll quickly. Applying one refuses to overwrite existing survey
+questions.
+
+Both bases are always on screen — percentages of all who answered, and of those
+with a view — so the two can never be silently swapped between, and the
+disclosure block assembles everything a published figure should carry from the
+poll's own data.
+
 ## Open risks
 
 - **`{{time_of_day}}`** in the repo prompt is supplied by nothing. Moot while
@@ -132,7 +180,10 @@ would lose its questions — never run it.** Running `retell:sync` *without*
 - `lib/polling/retell.ts`: Retell API helper and signature check (`x-retell-signature`, `v=<ms>,d=<hex>`, HMAC-SHA256(apiKey, body+ms), 5-minute window). It matches `retell-sdk` 6.2.12's `verify`.
 - `lib/polling/calls.ts`: links calls to polls (metadata `poll_id` / `batch_id`, or dynamic variable `poll_id`, or agent ID). Also function handlers, webhook ingestion, `derivePromptVariables`, `placePollCall`, `createPollBatch` (chunks of 1,000, parallel, timezone `America/Cayman`) and `reconcilePollCalls`.
 - `lib/polling/phone.ts`: **`tryNormalizePhone`** is strict (7-digit Cayman, or NANP with area and exchange codes starting 2-9) and returns `null`; it gates the two places calls are placed. `normalizePhone` stays lenient for recording and hashing inbound numbers, so ingestion can't be broken by an odd number. Before this, an 11-digit typo became `+33453249000` and was dialled — France.
-- `lib/polling/results.ts`: `POLL_VARIABLES` (the admin setup form is generated from this list), stats, tallies (option order comes from "(A / B / C)" in the question text), limits.
+- `lib/polling/results.ts`: `POLL_VARIABLES` (the admin setup form is generated from this list), stats, tallies (display order comes from "(A / B / C)" in the question text — the canonical order, not whatever any respondent heard, which is what lets rotation work without disturbing the results).
+- `lib/polling/rotation.ts`: per-respondent option rotation and the scale/terminal-option lexicons. `isNoViewOption` is the narrower "no view" set used for the "those expressing a view" base; `isTerminalOption` adds Something else / Other / None of these, which must stay last but *are* a view.
+- `lib/polling/templates.ts`: the four question sets and the reasoning shown beside each.
+- `components/poll-charts.tsx`: charts, the publication gate and the disclosure block. Plain HTML marks, no charting library — see the gotcha on bundle size.
 - `lib/polling/weighting.ts`: raking with trimming; `lib/polling/census.ts`: presets; `lib/polling/weighted.ts`: shared loader for results, weighting and CSV.
 - `app/api/retell/{webhook,functions}/route.ts`, `app/admin/polls/**`, `app/(auth)/admin/login`.
 - `lib/db.ts`: Prisma through a Proxy, importing **`@prisma/client/wasm`** (see fault 3). One client per request on Workers (keyed by `getCloudflareContext().ctx`, using Hyperdrive when bound), one shared client on Node.
@@ -145,6 +196,9 @@ would lose its questions — never run it.** Running `retell:sync` *without*
 - Next 15.5.28 is required because `@opennextjs/cloudflare` 1.20 needs Next ≥15.5.28.
 - The database uses Prisma 6 (not 7) with `@prisma/adapter-pg` (not Neon HTTP), so it can use Hyperdrive and be tested locally in workerd.
 - A poll cannot be activated without `survey_questions` **and** `company_name`: the company name is read aloud in the opening line, and a blank one would have every respondent hear "calling on behalf of" and a gap.
+- Charts use **no charting library**. The Worker had about 850 KB of headroom under the 3 MB limit and Recharts would have taken most of it; the whole chart layer cost 4 KB. Marks are plain HTML, so chart text can never be clipped or scaled oddly.
+- The chart palette was **computed, not chosen**. The brand's own sea↔amber pair was tried first as the diverging ramp and failed: its two amber steps measure ΔE 10.4 to normal vision, under the floor of 15, so most people could not tell "Dissatisfied" from "Very dissatisfied". The shipped ramp (`#1c5cab → #6da7ec → #f09b7a → #c2362f`) measures 22.7 normal and 17.0 under colour-vision deficiency on the adjacent pairs. Three categorical slots and both inner diverging steps sit under 3:1 contrast on white, which is why every bar is directly labelled and the counts stay as a table — that relief is what makes the low-contrast fills legitimate. If you re-colour these, re-run the check rather than eyeballing it.
+- Rotation records as well as rotates. Rotating without a record of what was read would make the data **less** auditable, not more, which is why `PollCall.optionOrder` shipped in the same change.
 - Weighting presets cover only two district sets:
   - Electors by area, from the Elections Office register effective 1 Oct 2026. Bodden Town is derived as the total minus the other areas.
   - Residents by district, from the 2021 Census, Section 1.2 (base 68,811). Sister Islands is derived the same way.
@@ -180,6 +234,18 @@ Deployment and tooling, all learned the hard way this session:
   "not serving" wait turned out to be the **local** resolver negative-caching
   the name from before it existed. Verify with `nslookup <host> 8.8.8.8`, or by
   connecting to the edge IP with the right SNI, before blaming Cloudflare.
+- **esbuild renames top-level identifiers**, so grepping the bundle for a
+  function name to check a change shipped returns 0 and looks like a failed
+  deploy. Grep for a string literal that exists only in the module instead.
+- **`information_schema` queries fail through the driver adapter** —
+  `column_name` is Postgres's `name` type and the adapter reports
+  `UnsupportedNativeDataType`. Cast to `::text`.
+- To look at an authenticated admin page without typing the master key into a
+  form, log in programmatically against the local Worker, fetch the page with
+  that cookie, inline its stylesheet and open the file. That is how the charts
+  were checked; it caught two layout bugs the type checker could not see — a
+  whisker striking through its own value label, and a near-full bar putting its
+  label on the surface instead of the bar.
 
 Application behaviour:
 
@@ -205,9 +271,12 @@ Application behaviour:
 
 > Continue the Ari polling work on branch `claude/stoic-tesla-2tUY0` of
 > `345cayworks/ari`. Read `docs/HANDOVER.md` first — it is current as of the
-> third session, when the app went live at https://polling.cayworks.net. The
-> immediate jobs are: publish the Retell agent so webhooks are delivered without
-> the reconcile button, and smoke-test `lib/ari/brain.ts` by sending the bot a
-> plain Telegram message, which has still never run against the live Anthropic
-> API. Use `npm run preview` rather than `next dev`, and never run
-> `retell:sync --prompt`.
+> third session, when the app went live at https://polling.cayworks.net and
+> gained option rotation, results charts with a publication gate, and
+> question-set templates. The immediate jobs are: publish the Retell agent so
+> webhooks are delivered without the reconcile button, and smoke-test
+> `lib/ari/brain.ts` by sending the bot a plain Telegram message, which has
+> still never run against the live Anthropic API. Use `npm run preview` rather
+> than `next dev`, never run `retell:sync --prompt`, and when you change a
+> chart or a question template read the reasoning in "Polling quality" first —
+> several of those choices look arbitrary and are not.
