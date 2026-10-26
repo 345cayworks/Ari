@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { AuthError } from "next-auth";
 import { auth, signIn } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -29,11 +30,28 @@ export default async function LoginPage({
         <form
           action={async (formData: FormData) => {
             "use server";
-            await signIn("credentials", {
-              email: formData.get("email"),
-              masterKey: formData.get("masterKey"),
-              redirectTo: "/admin",
-            });
+            // signIn throws on a bad credential instead of redirecting, and an
+            // uncaught AuthError in a server action renders Next's generic
+            // "server-side exception" page — so a mistyped key looked like a
+            // broken deployment. Send it to the error banner above instead.
+            // A successful sign-in throws NEXT_REDIRECT, which is not an
+            // AuthError, so it still falls through and redirects.
+            try {
+              await signIn("credentials", {
+                email: formData.get("email"),
+                masterKey: formData.get("masterKey"),
+                redirectTo: "/admin",
+              });
+            } catch (err) {
+              // Only a rejected credential becomes the banner. Anything else —
+              // including an error thrown inside authorize(), which Auth.js
+              // wraps as CallbackRouteError — is a real fault and must not be
+              // disguised as a mistyped key.
+              if (err instanceof AuthError && err.type === "CredentialsSignin") {
+                redirect("/admin/login?error=CredentialsSignin");
+              }
+              throw err;
+            }
           }}
           className="mt-6 space-y-4"
         >
