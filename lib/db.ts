@@ -1,4 +1,12 @@
-import { PrismaClient } from "@prisma/client";
+// Deliberately "@prisma/client/wasm", not "@prisma/client". OpenNext bundles
+// the server with esbuild using platform "node" *and* the workerd condition,
+// and esbuild honours whichever the package lists first — Prisma lists "node"
+// first, so the plain entry point always resolves to the Node client, which
+// reads its query compiler off a filesystem the Worker does not have. The
+// /wasm subpath has no node/workerd branching, so it resolves to the WASM
+// build and loads the compiler as a module import. Nothing under Node imports
+// this file except `next dev`; the scripts and the seed have their own client.
+import { PrismaClient } from "@prisma/client/wasm";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 

@@ -3,8 +3,16 @@
 // Multi-tenant from day 1. You're tenant #1.
 // ============================================================
 
+// engineType = "client" generates the Rust-free client: no native engine and no
+// WASM engine, all queries go through the driver adapter in lib/db.ts. Without
+// it, generate emits a native engine for the build machine and the bundler
+// resolves the Node entry point, so every query on workerd failed with "could
+// not locate the Query Engine". binaryTargets cannot fix that — workerd cannot
+// execute a binary — and the WASM entry is only chosen under an export
+// condition the OpenNext bundle does not apply.
 generator client {
-  provider        = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "client"
 }
 
 datasource db {

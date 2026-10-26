@@ -1,6 +1,13 @@
 import { PrismaClient, Role, SubscriptionStatus } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-const prisma = new PrismaClient();
+// The Rust-free client (queryCompiler) has no built-in engine, so it must be
+// given a driver adapter even here.
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error("DATABASE_URL is required to seed.");
+}
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
 async function main(): Promise<void> {
   const email = process.env.SUPER_ADMIN_EMAIL;
