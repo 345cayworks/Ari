@@ -124,7 +124,7 @@ async function ResultsTab({
 }): Promise<JSX.Element> {
   const calls = await prisma.pollCall.findMany({
     where: { pollId: poll.id },
-    select: { outcome: true, durationMs: true, analysis: true, startedAt: true },
+    select: { outcome: true, durationMs: true, analysis: true, startedAt: true, optionOrder: true },
   });
   const stats = computeStats(calls);
   const { config, weighting, tallies } = await loadPollResults(poll, { includePartial, weighted });
@@ -288,6 +288,7 @@ async function ResultsTab({
           effectiveN: weighting ? weighting.effectiveN : null,
           marginOfError: weighting ? weighting.marginOfError : null,
           weightedTo,
+          rotated: calls.filter((c) => c.optionOrder !== null).length,
           questions: [...questionText.entries()]
             .sort((a, b) => compareQuestionIds(a[0], b[0]))
             .map(([id, text]) => ({ id, text })),

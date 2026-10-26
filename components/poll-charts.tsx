@@ -387,6 +387,8 @@ export interface DisclosureFacts {
   effectiveN: number | null;
   marginOfError: number | null;
   weightedTo: string;
+  /** How many interviews heard a rotated option order. */
+  rotated: number;
   questions: { id: string; text: string }[];
 }
 
@@ -417,6 +419,12 @@ export function DisclosureBlock({ facts }: { facts: DisclosureFacts }): JSX.Elem
     [
       "Cooperation rate",
       cooperation ? `${Math.round((facts.completed / cooperation) * 100)}% (completed ÷ completed + partial + refused)` : "—",
+    ],
+    [
+      "Answer order",
+      facts.rotated > 0
+        ? `Answer options were read in a different order for each respondent (${facts.rotated.toLocaleString()} of ${facts.n.toLocaleString()} ${facts.n === 1 ? "interview" : "interviews"}); ordered scales were reversed rather than shuffled, and "Don't know" and "Something else" always read last. The order each respondent heard is recorded against their call.`
+        : "Answer options were read in the order written, the same way for every respondent.",
     ],
     ["Weighting", facts.weightedTo || "Unweighted"],
     [

@@ -1,7 +1,8 @@
-import { PollCallOutcome, type Poll } from "@prisma/client";
+import { PollCallOutcome, Prisma, type Poll } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { CALL_OUTCOMES } from "./config";
 import { hashPhone, normalizePhone, tryNormalizePhone } from "./phone";
+import { rotateSurveyQuestions } from "./rotation";
 import {
   respondentNumber,
   retellApi,
@@ -41,12 +42,16 @@ async function batchIdFor(call: RetellCall, poll: Poll): Promise<string | undefi
 
 export async function upsertPollCall(call: RetellCall, poll: Poll) {
   const batchId = await batchIdFor(call, poll);
+  // Set on update as well as create, so a call reconciled long afterwards still
+  // records the order its respondent heard.
+  const optionOrder = (call.metadata as { option_order?: unknown } | undefined)?.option_order;
   const live = {
     callStatus: call.call_status,
     startedAt: toDate(call.start_timestamp),
     endedAt: toDate(call.end_timestamp),
     durationMs: call.duration_ms,
     disconnectionReason: call.disconnection_reason,
+    ...(optionOrder ? { optionOrder: optionOrder as Prisma.InputJsonValue } : {}),
   };
   return prisma.pollCall.upsert({
     where: { retellCallId: call.call_id },
@@ -357,15 +362,28 @@ function derivePromptVariables(variables: Record<string, string>): Record<string
 
 // One outbound call, in the shape both create-phone-call and batch tasks take.
 function callTask(poll: Poll, toNumber: string, batchId?: string) {
-  const variables = derivePromptVariables(
-    Object.fromEntries(
-      Object.entries((poll.variables ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
-    )
+  const base = Object.fromEntries(
+    Object.entries((poll.variables ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])
   );
+
+  // Each respondent hears their own option order, so primacy bias cancels out
+  // across the sample instead of accumulating on whatever is written first.
+  // The order travels in metadata and is copied onto the call row by the
+  // webhook: rotating without recording would make the data less auditable.
+  const rotation = rotateSurveyQuestions(base.survey_questions ?? "");
+  base.survey_questions = rotation.text;
+  const variables = derivePromptVariables(base);
+  const rotated = Object.keys(rotation.order).length > 0;
+
   return {
     to_number: normalizePhone(toNumber),
     override_agent_id: poll.retellAgentId ?? process.env.RETELL_AGENT_ID,
-    metadata: { tenant_id: poll.tenantId, poll_id: poll.id, ...(batchId ? { batch_id: batchId } : {}) },
+    metadata: {
+      tenant_id: poll.tenantId,
+      poll_id: poll.id,
+      ...(batchId ? { batch_id: batchId } : {}),
+      ...(rotated ? { option_order: rotation.order } : {}),
+    },
     retell_llm_dynamic_variables: { ...variables, poll_id: poll.id },
   };
 }

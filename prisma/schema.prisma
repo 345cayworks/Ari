@@ -262,6 +262,10 @@ model PollCall {
   inVoicemail         Boolean?
   // Raw custom_analysis_data from Retell, kept for QA and re-processing.
   analysis            Json?
+  // The answer-option order this respondent actually heard, by question id,
+  // where it differed from the order as written. Rotation without a record of
+  // what was read is not auditable, so this is written at the same time.
+  optionOrder         Json?
   responses           PollResponse[]
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
