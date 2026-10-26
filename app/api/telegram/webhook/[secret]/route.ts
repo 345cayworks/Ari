@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
-import { Bot } from "grammy";
+// Deliberately "grammy/web", not "grammy". grammY's "." export resolves the
+// `node` condition to a build whose shim pulls in the `abort-controller` and
+// `node-fetch` polyfills — and OpenNext bundles with esbuild's platform "node",
+// so that is what gets picked. workerd's fetch then rejects the polyfilled
+// signal with "Expected signal to be an instanceof AbortSignal", and grammY
+// reports it only as "Network request for 'sendChatAction' failed!". The /web
+// subpath has no node/browser branching and uses the global AbortController
+// and fetch. Same trap as "@prisma/client/wasm" in lib/db.ts — don't "tidy"
+// either back to the bare specifier.
+import { Bot } from "grammy/web";
 import { prisma } from "@/lib/db";
 import { respond } from "@/lib/ari/brain";
 import { transcribe, transcriptionConfigured } from "@/lib/ari/stt";
@@ -128,9 +137,20 @@ export async function POST(
     await handleUpdate(update);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Telegram webhook error:", err);
+    // grammY wraps the underlying failure in an HttpError whose message says
+    // only "Network request for 'x' failed!". The thrown original is kept on
+    // `.error` (not the standard `.cause`), and logging the error object alone
+    // throws it away — which is what made this hard to diagnose.
+    const describe = (e: unknown): string =>
+      e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    const inner =
+      err instanceof Error
+        ? ((err as { cause?: unknown }).cause ?? (err as { error?: unknown }).error)
+        : undefined;
+    const cause = inner ? ` | cause: ${describe(inner)}` : "";
+    console.error(`Telegram webhook error: ${describe(err)}${cause}`);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "unknown" },
+      { error: err instanceof Error ? err.message : "unknown", cause: cause || undefined },
       { status: 200 }
     );
   }
