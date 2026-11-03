@@ -386,11 +386,11 @@ export async function deliverResults(formData: FormData): Promise<void> {
     const detail = result.problems?.length
       ? `${result.reason} ${result.problems.join(" ")}`
       : result.reason;
-    redirect(`/admin/polls/${poll.id}?tab=results&error=${encodeURIComponent(detail)}`);
+    redirect(`/admin/polls/${poll.id}?tab=delivery&error=${encodeURIComponent(detail)}`);
   }
 
   const q = new URLSearchParams({
-    tab: "results",
+    tab: "delivery",
     delivered: result.status,
     sequence: String(result.sequence),
   });
@@ -414,11 +414,11 @@ export async function replayResults(formData: FormData): Promise<void> {
 
   if (!result.ok) {
     redirect(
-      `/admin/polls/${poll.id}?tab=results&error=${encodeURIComponent(result.reason)}`
+      `/admin/polls/${poll.id}?tab=delivery&error=${encodeURIComponent(result.reason)}`
     );
   }
   const q = new URLSearchParams({
-    tab: "results",
+    tab: "delivery",
     delivered: result.status,
     sequence: String(result.sequence),
   });
@@ -444,10 +444,10 @@ export async function fixAndResendResults(formData: FormData): Promise<void> {
     const detail = result.problems?.length
       ? `${result.reason} ${result.problems.join(" ")}`
       : result.reason;
-    redirect(`/admin/polls/${poll.id}?tab=results&error=${encodeURIComponent(detail)}`);
+    redirect(`/admin/polls/${poll.id}?tab=delivery&error=${encodeURIComponent(detail)}`);
   }
   const q = new URLSearchParams({
-    tab: "results",
+    tab: "delivery",
     delivered: result.status,
     sequence: String(result.sequence),
   });

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Poll, PollDeliveryStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { loadFeedConfig } from "@/lib/polling/feed";
@@ -76,7 +77,16 @@ export async function DeliveryPanel({
 
       {!ready && (
         <p className="mt-3 text-sm" style={{ color: "#8a6d1f" }}>
-          Not configured: {reasons.join(", ")}.
+          Not configured: {reasons.join(", ")}.{" "}
+          {/* The key lives on Settings because it identifies a campaign and
+              many polls deliver to the same one. That is the right home and
+              the wrong place to go looking from here, so the door is put
+              where somebody stuck on this page would want it. */}
+          {!config.hasToken && (
+            <Link href="/admin/settings" className="underline">
+              Add a campaign key
+            </Link>
+          )}
         </p>
       )}
 

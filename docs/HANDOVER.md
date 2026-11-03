@@ -70,13 +70,13 @@ delivery is lost. Until then `missing` is `[]`, which is the proven case.
 
 If it does break it breaks late, visibly, and without losing anything: the
 delivery has already landed by then and only the panel's rendering of the gap
-list would fail. Open a poll's Results tab to confirm the panel appears at all
-— it should say which of the three prerequisites is missing.
-Migration `20261102223000_poll_delivery` is written but **not applied**, no
-`POLITRACKER_FEED_TOKEN` exists — the receiving end issues it and an invented
-one gets a flat 401 — and the `poll_feed` platform setting is absent, so the
-button is disabled and says why. The payload builder is verified against the
-receiver's real parser; the wire has not been touched.
+list would fail. Open a poll's **Delivery** tab to confirm the panel appears at
+all — it should say what is missing, with a link to add a campaign key.
+
+Both migrations are applied and the Worker is deployed. What is still missing
+is only the key: no campaign key is stored and no `POLITRACKER_FEED_TOKEN`
+exists, so the buttons are disabled and say so. The payload builder is
+verified against the receiver's real parser; the wire has not been touched.
 
 ## The three faults a real deploy exposed
 
@@ -209,7 +209,7 @@ the `NEON_*` names the cloud environment used.
    - `STERLING` holds **zero deliveries** and **sequence 1 is free**, so the
      allocator will take 1 and will not collide.
 
-   Then **use "Deliver as a test"** on the poll's Results tab for the first
+   Then **use "Deliver as a test"** on the poll's Delivery tab for the first
    one. There is no staging campaign at the receiving end and **no delete
    path through the API** — but be precise about what that does and does not
    mean, because the stronger version was stated here before and it was
@@ -330,7 +330,7 @@ applied in Politracker. This side:
 | `lib/polling/publication.ts` | The gate, moved out of `poll-charts.tsx` now that it travels to another system |
 | `scripts/check-delivery.ts` | `npm run check:delivery` |
 | `scripts/show-delivery.ts` | `npm run show:delivery` — prints the stored row and every blocker in full |
-| `app/admin/polls/[id]/delivery-panel.tsx` | The button, and the log of what has gone |
+| `app/admin/polls/[id]/delivery-panel.tsx` | The **Delivery** tab: the buttons, and the log of what has gone |
 
 Worth knowing before changing any of it — and deliberately not counted,
 because every count written above a list in this document has gone stale

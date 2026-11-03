@@ -45,6 +45,7 @@ export const dynamic = "force-dynamic";
 type SearchParams = Record<string, string | undefined>;
 const TABS = [
   ["results", "Results"],
+  ["delivery", "Delivery"],
   ["calls", "Calls"],
   ["weighting", "Weighting"],
   ["setup", "Setup"],
@@ -117,6 +118,10 @@ export default async function PollPage(props: {
           weighted={searchParams.weights !== "off"}
         />
       )}
+      {tab === "delivery" && (
+        <DeliveryPanel poll={poll} includePartial={searchParams.include === "partial"} />
+      )}
+
       {tab === "weighting" && <WeightingTab poll={poll} searchParams={searchParams} />}
       {tab === "calls" && <CallsTab poll={poll} searchParams={searchParams} />}
       {tab === "setup" && (
@@ -305,7 +310,6 @@ async function ResultsTab({
         }}
       />
 
-      <DeliveryPanel poll={poll} includePartial={includePartial} />
     </div>
   );
 }
