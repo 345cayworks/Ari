@@ -455,6 +455,17 @@ of a story like this:
 - **Reading their implementation instead of their report.** Found a
   `touchFeedKey` that was defined, exported and called from nowhere, under a
   documented promise that key use was logged.
+
+  The inverse of this is a failure rather than a mechanism, and it cost the
+  worst claim in this file. Their `docs/poll-feed.md` said "no delete path
+  through the API; the only removal is dropping the campaign, which takes its
+  register with it". The first clause is true of their API; the second was
+  written as true of their system and is not. It was read here, copied into
+  this document, and stated to the user as fact — three hops, each of which
+  looked like verification because the previous one was written down. Nobody
+  checked until they violated it themselves to free a sequence.
+  An interface property written as a system property does not read as scoped,
+  so it travels unscoped.
 - **The other side refusing a conclusion stated as settled.** A 422 left a
   permanently gapped sequence here, and it was written off as acceptable.
   Declaring it fine is what stopped the checking; it took an outside reader
