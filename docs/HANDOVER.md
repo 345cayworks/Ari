@@ -624,14 +624,40 @@ correction. Theirs arrived as a courtesy — flagging a correction, crediting
 the other — which is what disguised it: it read as generous rather than as
 factual.
 
-### A comment should carry the constraint, not just the fact
+### A constraint carries the author's confidence where nobody re-reads it
 
-Also theirs, and it changed code here. A comment stating how the far end
-computes something tells the next person what is true. It does not tell them
-what they are holding — that widening a set or a bound carelessly will make
-the far end accuse this one of losing something it deleted on purpose. The
-gap-list comments in `feed.ts` were facts and are now constraints, which is
-the difference between a reader being informed and a reader being warned.
+Their distinction, which changed code here and then produced the worst claim
+of the day. A comment stating how the far end computes something tells the
+next person what is true; a constraint tells them what they are holding. The
+gap-list comments in `feed.ts` were facts and became constraints.
+
+Writing one of them produced a sentence saying a withdrawn number is "not
+free for reuse" and that reclaiming one "would collide rather than tidy up".
+**It would not have.** They measured it: the delivery row is gone, so their
+uniqueness constraint sees a free slot and takes it, leaving a campaign
+holding a delivery at sequence 1 beside a notice that delivery 1 was
+withdrawn. Each half true, nothing raised, nothing to see unless somebody
+reads the page — worse than the collision, because a collision would have
+told one of us.
+
+So the form is right and carries a cost worth naming, theirs: a constraint
+asks for a claim about behaviour the author may never have run, and a sentence
+written to protect a future reader carries the author's confidence into the
+one place nobody re-reads. This file said a fact version "would have let
+them". That was backwards. The constraint version is what would have let
+them, by promising protection that did not exist.
+
+The recovery is the only reason it is not still wrong: the claim was stated
+out loud to someone who checked it. Which is an argument for saying what you
+believe rather than only what you have verified — strictly conditional on it
+going to somebody who will test it, and worthless otherwise.
+
+**Live condition.** Their guarantee against re-offering a withdrawn number is
+built and local only; their production has `0017` and the misbehaviour, so a
+re-offered withdrawn number is accepted silently today. This side cannot
+provoke it — `allocate` only ever goes forwards — so it is a mistake or a
+hand-driven replay that would. Past-tense this when they say `0018` is
+applied, and not before.
 
 ### A guarantee enforced in one direction gets described in both
 

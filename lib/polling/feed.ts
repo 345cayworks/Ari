@@ -358,10 +358,27 @@ async function assemble(
  * because the fact alone does not warn anybody. Out-of-order is safe.
  * **Skipping a number is not**: their gap list is the set of numbers no
  * delivery holds and no withdrawal accounts for, so a number this side never
- * sends is reported to a campaign as a delivery that was lost. And a number
- * they have *withdrawn* is out of their gap list but still counts toward the
- * series bound, so it is not free for reuse either — reclaiming one would
- * collide rather than tidy up.
+ * sends is reported to a campaign as a delivery that was lost.
+ *
+ * **Never re-offer a number they have withdrawn.** An earlier version of this
+ * comment said doing so "would collide rather than tidy up". It would not
+ * have. They measured it: the delivery row is gone, so their uniqueness
+ * constraint sees a free slot and takes it, and the campaign ends up holding
+ * a delivery at sequence 1 beside a notice saying delivery 1 was withdrawn.
+ * Each half true, nothing raised, nothing to notice unless somebody reads the
+ * page. A collision would at least have told one of us.
+ *
+ * Their rule settles why: a sequence is consumed if and only if that endpoint
+ * answered 2xx. A withdrawn delivery *was* accepted, so its number is spent;
+ * withdrawing records what became of the delivery and cannot un-spend the
+ * number.
+ *
+ * They have built the guarantee — a trigger refusing the insert, answering
+ * 409 with `withdrawn: true` — but **it is not in their production yet**, so
+ * at the time of writing a re-offered withdrawn number is still accepted
+ * silently. This side cannot provoke it by accident, because `allocate` takes
+ * max + 1 over rows here and never goes backwards. It is a mistake or a
+ * hand-driven replay that would.
  */
 async function allocate(
   target: string,
@@ -517,6 +534,7 @@ async function send(
     detail?: string;
     error?: string;
     held_by?: string;
+    withdrawn?: boolean;
     missing_sequences?: number[];
   };
   const missing = Array.isArray(body.missing_sequences) ? body.missing_sequences : [];
@@ -579,17 +597,27 @@ async function send(
     // hazard does not exist. Dead defensive code is not free — it reads as
     // evidence that the thing it guards against happens, and the next person
     // takes a wrong model of that endpoint from it.
-    const detail =
-      `Sequence #${payload.sequence} is already held at the far end` +
-      (heldBy === null ? "" : ` by delivery ${heldBy}`) +
-      `. This delivery was recorded as refused, but it landed. Deliver again to send revised numbers under a new sequence.`;
+    // `withdrawn` distinguishes the two ways a number can be spent, and
+    // without it the message sends somebody looking for a row that is gone:
+    // `held_by` names the delivery holding the sequence, which for a
+    // withdrawal is one this side may have no record of at all.
+    const detail = body.withdrawn
+      ? `Sequence #${payload.sequence} is spent: a delivery was accepted under it at the far end and later withdrawn` +
+        (heldBy === null ? "" : ` (${heldBy})`) +
+        `. Withdrawing records what became of a delivery; it does not free the number. Deliver again under a new sequence.`
+      : `Sequence #${payload.sequence} is already held at the far end` +
+        (heldBy === null ? "" : ` by delivery ${heldBy}`) +
+        `. This delivery was recorded as refused, but it landed. Deliver again to send revised numbers under a new sequence.`;
 
     // Put the record straight. The far end is authoritative about what it
     // holds, and leaving a landed delivery marked refused is how a gap gets
     // reported that was never a gap. The `!== id` test is not a guard against
     // the self-naming case above — it is there so this update and the `record`
     // below cannot both write the same row, the second overwriting the first.
-    if (heldBy !== null && heldBy !== id) {
+    // Only for a live holder. Marking a row ACCEPTED because a *withdrawn*
+    // delivery holds the number would assert the far end still has it, which
+    // is the opposite of what a withdrawal means.
+    if (heldBy !== null && heldBy !== id && body.withdrawn !== true) {
       await prisma.pollDelivery
         .update({
           where: { id: heldBy },
