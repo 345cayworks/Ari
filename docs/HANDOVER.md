@@ -179,9 +179,19 @@ the `NEON_*` names the cloud environment used.
    enabling it then would have made an unmarked permanent delivery the only
    available action. Both halves are current now, so what remains is one step:
 
+   **Add it under Settings → Campaign result feeds.** Campaign name, feed key
+   name (`default` unless delivering to more than one campaign), endpoint, and
+   the key itself. Saving over an existing feed replaces its key and
+   un-revokes it, which is how to rotate one.
+
+   The CLI route still works and is still the safer of the two, because a
+   credential outside the database cannot leak with a dump of it:
+
    ```
    npx wrangler secret put POLITRACKER_FEED_TOKEN
    ```
+
+   A stored key wins over the environment variable when both exist.
 
    Run that yourself and paste the key at the prompt. It is deliberately not
    installed by Claude and was never asked for in chat: the key is a
@@ -476,7 +486,31 @@ against it:
    result.
 
 
-7. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
+7. **The feed key is stored encrypted, and the key to it is not in the
+   database.** `docs/poll-results-api.md` settled that the token belongs in an
+   environment variable rather than a record, and the reasoning was right: a
+   credential in a row turns up in a dump, a log line or an export. It became
+   a row anyway, because an environment variable holds one value and a
+   platform delivering to several campaigns needs one key each — so the
+   reasoning is answered rather than dropped. `FeedTarget.tokenSealed` is
+   AES-GCM ciphertext; the key is derived by HKDF from `PHONE_HASH_SECRET`,
+   which already exists everywhere and is documented "never change once in
+   use".
+
+   Two consequences worth knowing. **Rotating `PHONE_HASH_SECRET` makes every
+   stored key unreadable** — recoverable by pasting them again, and the panel
+   says exactly that rather than failing at delivery time. And unlike the
+   receiving end, which stores `token_sha256` and never the token, this side
+   has to *present* the key, so a hash is not an option. Encryption is the
+   best available here, not the best imaginable.
+
+   `npm run check:secret-box` has 16 assertions, each paired with the thing
+   that would let it pass by accident: "it opens" beside "it does not open
+   under a different secret", "the ciphertext differs each time" beside "both
+   still open", and the fingerprint checked not to depend on the secret, since
+   an operator compares it against what the far end reports.
+
+8. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type
    carries the shape and the limits already cover it, so a crosstab engine has
    somewhere to plug in. They are optional in the contract, so nothing is

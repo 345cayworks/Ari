@@ -102,6 +102,7 @@ model Tenant {
   pollDeliveries       PollDelivery[]
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
+  feedTargets          FeedTarget[]
 }
 
 enum SubscriptionStatus {
@@ -427,4 +428,43 @@ enum PollDeliveryStatus {
   DUPLICATE // 200, the receiver already held this delivery_id
   REFUSED // 4xx that will not change on retry without a fix (401/403/422)
   FAILED // transport error or 5xx; safe to replay unchanged
+}
+
+// --- Where a campaign's results are delivered -------------------------
+// One row per campaign feed. Deliberately NOT on Poll: the token
+// identifies a campaign and many polls deliver to the same one, so a
+// token on a poll record would be copied per poll and rotated per poll.
+// `docs/poll-results-api.md` settled that it should not sit in a poll
+// record, and that still holds — this is a credential store, not a
+// field on the thing being delivered.
+
+model FeedTarget {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Matches PollDelivery.target, which is what scopes the sequence.
+  // "default" is the one a delivery uses unless told otherwise.
+  target      String
+  // What an operator calls it — the campaign's name at the far end.
+  label       String
+  endpointUrl String
+
+  // AES-GCM ciphertext, `v1.<iv>.<ct>`; see lib/polling/secret-box.ts.
+  // The key is derived from PHONE_HASH_SECRET and is not in this database,
+  // so a dump of this table yields nothing usable on its own.
+  tokenSealed      String @db.Text
+  // First eight hex of the token's SHA-256. Lets an operator confirm which
+  // key is installed, and compare it against what the receiving end reports
+  // for the key it issued, without the token being readable here.
+  tokenFingerprint String
+
+  // Set rather than deleted, so a feed that was switched off stays visible
+  // beside the deliveries it explains.
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([tenantId, target])
+  @@index([tenantId, revokedAt])
 }

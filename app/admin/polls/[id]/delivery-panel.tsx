@@ -58,7 +58,10 @@ export async function DeliveryPanel({
   const reasons = [
     !config.enabled ? "the feed is switched off in platform settings" : null,
     config.endpointUrl === "" ? "no endpoint URL is set" : null,
-    !config.hasToken ? "POLITRACKER_FEED_TOKEN is not in the environment" : null,
+    // Names the action rather than the mechanism. "POLITRACKER_FEED_TOKEN is
+    // not in the environment" was accurate and told an operator nothing they
+    // could act on from this page.
+    !config.hasToken ? "no campaign key — add one under Settings" : null,
   ].filter((r): r is string => r !== null);
 
   return (
@@ -74,6 +77,24 @@ export async function DeliveryPanel({
       {!ready && (
         <p className="mt-3 text-sm" style={{ color: "#8a6d1f" }}>
           Not configured: {reasons.join(", ")}.
+        </p>
+      )}
+
+      {/* A stored key that will not decrypt is its own case: the feed looks
+          configured and is not, and the cause is almost always that
+          PHONE_HASH_SECRET changed. Saying so here saves an operator looking
+          for a fault at the far end. */}
+      {config.problem !== null && (
+        <p className="mt-3 text-sm" style={{ color: "#8f2020" }}>
+          {config.problem}
+        </p>
+      )}
+
+      {ready && (
+        <p className="mt-3 text-sm text-ink/50">
+          Delivering with the{" "}
+          {config.tokenSource === "stored" ? "stored campaign key" : "key from the Worker environment"}
+          {config.fingerprint === null ? "" : <> (<code>{config.fingerprint}</code>…)</>}.
         </p>
       )}
 

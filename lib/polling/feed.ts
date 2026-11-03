@@ -7,6 +7,7 @@ import {
   type DeliveryPayload,
 } from "./delivery";
 import { publicationBlockers } from "./publication";
+import { fingerprint, open } from "./secret-box";
 import { computeStats } from "./results";
 import { loadPollResults } from "./weighted";
 import { weightedToLabel } from "./weighting";
@@ -30,26 +31,78 @@ const MAX_SEQUENCE_ATTEMPTS = 5;
 export interface FeedConfig {
   enabled: boolean;
   endpointUrl: string;
-  /** Present or not; never returned, logged or rendered. */
+  /** Present or not; the token itself is never returned, logged or rendered. */
   hasToken: boolean;
+  /** Where the token came from, for telling an operator what to fix. */
+  tokenSource: "none" | "stored" | "environment";
+  /** First eight hex of the token's SHA-256 when one is stored. */
+  fingerprint: string | null;
+  /** Set when a stored token exists but would not decrypt. */
+  problem: string | null;
 }
 
 /**
- * Endpoint in a platform setting, token in the environment.
+ * Where the endpoint and the token come from, in that order of preference.
  *
- * The split follows `lib/integrations/ads-cayworks.ts`, and the token is not
- * in a poll record or any other row for the reason the contract gives: it is a
- * credential for somebody else's system, and a credential that lives in a
- * record is one that eventually turns up in a dump, a log line or an export.
+ * A stored `FeedTarget` wins over the environment. The contract settled that
+ * the token belongs in an environment variable rather than a record, and the
+ * reasoning — a credential in a row turns up in a dump, a log line or an
+ * export — was right and is answered rather than abandoned: what is stored is
+ * ciphertext whose key is derived from `PHONE_HASH_SECRET` and is not in the
+ * database. See `lib/polling/secret-box.ts`.
+ *
+ * The environment path stays because it is still the safer of the two and
+ * because a deployment delivering to one campaign has no reason to move. It is
+ * the fallback, not the deprecated option.
  */
-export async function loadFeedConfig(): Promise<FeedConfig> {
-  const row = await prisma.platformSetting.findUnique({ where: { key: "poll_feed" } });
-  const value = (row?.value ?? {}) as Record<string, unknown>;
+export async function loadFeedConfig(target = TARGET_DEFAULT): Promise<FeedConfig> {
+  const [setting, stored] = await Promise.all([
+    prisma.platformSetting.findUnique({ where: { key: "poll_feed" } }),
+    prisma.feedTarget.findFirst({
+      where: { target, revokedAt: null },
+      select: { endpointUrl: true, tokenSealed: true, tokenFingerprint: true },
+    }),
+  ]);
+  const value = (setting?.value ?? {}) as Record<string, unknown>;
+  const enabled = Boolean(value.enabled);
+  const settingUrl = String(value.endpointUrl ?? process.env.POLITRACKER_FEED_URL ?? "");
+
+  if (stored !== null) {
+    // Opened here rather than at send time so the panel can say "the stored
+    // token will not decrypt" instead of letting a delivery fail with it.
+    const plaintext = await open(stored.tokenSealed);
+    return {
+      enabled,
+      endpointUrl: stored.endpointUrl || settingUrl,
+      hasToken: plaintext !== null,
+      tokenSource: plaintext === null ? "none" : "stored",
+      fingerprint: stored.tokenFingerprint,
+      problem:
+        plaintext === null
+          ? "The stored token could not be decrypted. PHONE_HASH_SECRET has most likely changed; paste the token again to replace it."
+          : null,
+    };
+  }
+
+  const fromEnv = process.env.POLITRACKER_FEED_TOKEN;
   return {
-    enabled: Boolean(value.enabled),
-    endpointUrl: String(value.endpointUrl ?? process.env.POLITRACKER_FEED_URL ?? ""),
-    hasToken: Boolean(process.env.POLITRACKER_FEED_TOKEN),
+    enabled,
+    endpointUrl: settingUrl,
+    hasToken: Boolean(fromEnv),
+    tokenSource: fromEnv ? "environment" : "none",
+    fingerprint: fromEnv ? await fingerprint(fromEnv) : null,
+    problem: null,
   };
+}
+
+/** The token to send with, or null. Never returned by `loadFeedConfig`. */
+async function tokenFor(target: string): Promise<string | null> {
+  const stored = await prisma.feedTarget.findFirst({
+    where: { target, revokedAt: null },
+    select: { tokenSealed: true },
+  });
+  if (stored !== null) return open(stored.tokenSealed);
+  return process.env.POLITRACKER_FEED_TOKEN ?? null;
 }
 
 export type DeliveryOutcome =
@@ -76,7 +129,12 @@ export async function deliverPoll(
   if (!config.enabled) return { ok: false, reason: "The campaign feed is switched off." };
   if (config.endpointUrl === "") return { ok: false, reason: "No endpoint URL is configured." };
   if (!config.hasToken) {
-    return { ok: false, reason: "POLITRACKER_FEED_TOKEN is not set in the environment." };
+    return {
+      ok: false,
+      reason:
+        config.problem ??
+        "No feed token. Add one on the Settings page, or set POLITRACKER_FEED_TOKEN as a Worker secret.",
+    };
   }
 
   // A wave is how many deliveries this poll has already had, plus this one.
@@ -107,6 +165,7 @@ export async function deliverPoll(
 
   return send(row.id, config.endpointUrl, row.payload as unknown as DeliveryPayload, {
     expectNew: true,
+    target,
   });
 }
 
@@ -140,7 +199,12 @@ export async function redeliverRefused(
   if (!config.enabled) return { ok: false, reason: "The campaign feed is switched off." };
   if (config.endpointUrl === "") return { ok: false, reason: "No endpoint URL is configured." };
   if (!config.hasToken) {
-    return { ok: false, reason: "POLITRACKER_FEED_TOKEN is not set in the environment." };
+    return {
+      ok: false,
+      reason:
+        config.problem ??
+        "No feed token. Add one on the Settings page, or set POLITRACKER_FEED_TOKEN as a Worker secret.",
+    };
   }
 
   const row = await prisma.pollDelivery.findUnique({
@@ -348,7 +412,12 @@ export async function replayDelivery(id: string): Promise<DeliveryOutcome> {
   if (!config.enabled) return { ok: false, reason: "The campaign feed is switched off." };
   if (config.endpointUrl === "") return { ok: false, reason: "No endpoint URL is configured." };
   if (!config.hasToken) {
-    return { ok: false, reason: "POLITRACKER_FEED_TOKEN is not set in the environment." };
+    return {
+      ok: false,
+      reason:
+        config.problem ??
+        "No feed token. Add one on the Settings page, or set POLITRACKER_FEED_TOKEN as a Worker secret.",
+    };
   }
 
   const row = await prisma.pollDelivery.findUnique({
@@ -395,7 +464,7 @@ async function send(
   id: string,
   endpointUrl: string,
   payload: DeliveryPayload,
-  options: { expectNew: boolean },
+  options: { expectNew: boolean; target?: string },
 ): Promise<DeliveryOutcome> {
   const record = async (data: Record<string, unknown>): Promise<void> => {
     await prisma.pollDelivery.update({
@@ -404,13 +473,22 @@ async function send(
     });
   };
 
+  // Resolved here rather than passed in, so the plaintext exists only inside
+  // this function and never crosses a boundary where it could be logged.
+  const token = await tokenFor(options.target ?? TARGET_DEFAULT);
+  if (token === null) {
+    const detail = "No usable feed token at send time.";
+    await record({ status: "FAILED", detail });
+    return { ok: false, reason: detail, id };
+  }
+
   let res: Response;
   try {
     res = await fetch(endpointUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.POLITRACKER_FEED_TOKEN}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(payload),
     });

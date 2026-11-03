@@ -21,7 +21,8 @@
     "postinstall": "prisma generate",
     "retell:create-agent": "tsx --env-file-if-exists=.env.local scripts/retell-create-agent.ts",
     "check:delivery": "tsx scripts/check-delivery.ts",
-    "show:delivery": "tsx --env-file-if-exists=.env.local scripts/show-delivery.ts"
+    "show:delivery": "tsx --env-file-if-exists=.env.local scripts/show-delivery.ts",
+    "check:secret-box": "tsx scripts/check-secret-box.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.1",
