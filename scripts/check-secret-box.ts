@@ -64,6 +64,49 @@ async function main(): Promise<void> {
   process.env.PHONE_HASH_SECRET = "c".repeat(64);
   check("does not depend on PHONE_HASH_SECRET", fp === (await fingerprint(token)));
 
+  console.log("");
+  console.log("Fingerprint: known answers, not properties");
+  // Everything above pins PROPERTIES — eight hex characters, stable, distinct,
+  // independent of PHONE_HASH_SECRET — and not one pins the VALUE. SHA-1, a
+  // different slice, or a pepper added to the digest would pass all five.
+  //
+  // That matters more here than it would almost anywhere else. This
+  // fingerprint exists to be read aloud and compared against the issuing
+  // platform's own display before a first delivery. If the two formulas ever
+  // diverge, both suites stay green, both sides show eight plausible hex
+  // characters, and the operator concludes they hold the wrong key — the exact
+  // failure the comparison exists to catch, inverted.
+  //
+  // The other platform found this same hole in its own suite by adding a
+  // pepper to every digest in the product: seven tests failed, 788 passed.
+  // Every expectation had been computed WITH the function under test.
+  const vectors: [string, string, string][] = [
+    // Published values, not snapshots of today's output.
+    ["abc", "ba7816bf", "FIPS vector ba7816bf8f01cfea…"],
+    ["", "e3b0c442", "empty-string digest, where a pepper shows up most plainly"],
+    // Digest opens 54 01 c5 00 — two bytes under 0x10 inside the eight-char
+    // window, so dropping padStart(2, "0") yields 541c501c instead. "abc"
+    // cannot catch that: its low byte is the sixth, outside the slice.
+    ["pad-7", "5401c500", "per-byte zero padding"],
+  ];
+  for (const [input, expected, why] of vectors) {
+    const got = await fingerprint(input);
+    check(`${JSON.stringify(input)} -> ${expected}  (${why})`, got === expected, `got ${got}`);
+  }
+
+  // UTF-8 versus UTF-16, with the expectation built from the explicit bytes
+  // rather than from the encoder under test — otherwise this asserts only that
+  // the function agrees with itself, which is the mistake being corrected.
+  const utf8 = new Uint8Array([0xc3, 0xa9]); // "é"
+  const fromExplicitBytes = [...new Uint8Array(await crypto.subtle.digest("SHA-256", utf8))]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 8);
+  check(
+    `"é" hashes its UTF-8 bytes C3 A9, not UTF-16  (${fromExplicitBytes})`,
+    (await fingerprint("é")) === fromExplicitBytes,
+  );
+
   console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }
