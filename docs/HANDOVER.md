@@ -347,6 +347,31 @@ against it:
    than a tolerance, and the 409 branch is what makes the violation
    diagnosable instead of silent.
 
+   **Open right now: the two sides disagree about sequence 1 of `PPM`.** Their
+   operator removed the test delivery from their store, so `PPM` holds zero
+   deliveries there. This side still holds the row — sequence 1, `ACCEPTED`,
+   `baf25c5c-e30d-4d29-a9d3-81b6a92eeb00` — because nothing told it to let go.
+
+   The consequence is concrete and bad in a familiar way. `allocate` takes
+   `max + 1` over rows *here*, so the next delivery to `PPM` claims **2**.
+   Their gap list is a set difference over `1..max`, so sequence 1 would
+   report as missing for ever: a permanent false report of a lost delivery,
+   which is precisely what both sides built that mechanism to mean something
+   real. The same false-gap failure as the 422 case, reached by a route
+   neither side had considered — a deletion at one end that the other does
+   not know about.
+
+   Two ways out, and it is an operator's decision rather than a technical one.
+   Delete the row here so sequence 1 is free on both sides, which costs the
+   local record that the delivery happened — recoverable from this document
+   and the git history, and arguably correct since an `ACCEPTED` row now
+   asserts something false. Or keep it, deliver as 2, and accept a standing
+   gap at 1 that does not mean what a gap means.
+
+   There is no third option: nothing in the contract marks a sequence as
+   withdrawn, and the allocator keys off `max(sequence)` regardless of status,
+   so a status change would not free the number.
+
    It is now also an agreement, which is weaker than a mechanism and worth
    more than nothing: their end has undertaken not to write to a campaign's
    delivery feed again, calls the 3 November trial the one exception, and
