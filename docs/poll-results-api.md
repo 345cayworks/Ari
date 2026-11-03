@@ -5,7 +5,14 @@ Politracker (**receiver**, politracker.cayworks.net). Written from the provider
 side because the provider publishes the contract; the receiving half is
 Politracker's to design against it.
 
-Status: proposed. Nothing is built.
+Status: **the receiving half is built and applied** (politracker migration
+`0015`: `campaign_feed_key`, `poll_delivery`, `poll_figure`, `poll_breakdown`).
+The sender is not built. No key has been issued and no delivery has been
+received, so nothing is live end to end.
+
+Where this document and the receiver differ, the receiver is what a delivery
+actually meets. Everything below marked *(receiver)* was read out of its
+implementation rather than agreed in advance.
 
 ## The shape, and why it is this shape
 
@@ -70,7 +77,13 @@ The token is:
 - **revocable**, and revocation takes effect immediately;
 - **logged** on use, so a delivery can be traced.
 
-Sent as `Authorization: Bearer <token>` over TLS.
+Sent as `Authorization: Bearer ptk_...` over TLS. The receiver checks the key
+**before** it looks at the payload, so the detailed `422` messages below are
+not a free validator for anyone without one *(receiver)*.
+
+On this side the token lives in an environment variable, with the endpoint URL
+in a platform setting — not in a poll record, which is where it would quietly
+become a field somebody dumps.
 
 Blast radius if it leaks: someone can post fabricated results into one
 campaign's dashboard. That is bad enough to warrant rotation on any suspicion,
@@ -81,12 +94,26 @@ register of electors.
 
 ```
 POST /v1/poll-results
-Authorization: Bearer <token>
+Authorization: Bearer ptk_...
 Content-Type: application/json
 ```
 
-Returns `202` with `{ "delivery_id": "...", "status": "accepted" }`, or `200`
-with the same body if this `delivery_id` was already stored — see idempotency.
+| Status | Body | Meaning |
+| --- | --- | --- |
+| `202` | `{ delivery_id, status: "accepted" }` | Stored. |
+| `200` | `{ delivery_id, status: "already_stored" }` | This `delivery_id` was already held. |
+| `401` | `{ error: "unauthorized" }` | Unknown key. Deliberately undifferentiated, so the endpoint cannot be used to discover which keys exist. |
+| `403` | `{ error: "campaign_suspended" }` | Key is valid, campaign is switched off. Told apart from `401` precisely so a pollster pushing into a dead campaign learns the numbers are not landing. |
+| `422` | `{ error: "invalid_request", detail }` | `detail` names the offending field. |
+
+**Record `detail` against the failed delivery.** An integration whose failures
+all read `invalid_request` is one somebody debugs by guessing.
+
+A `202` or `200` may also carry **`missing_sequences`** — an array of sequence
+numbers this campaign has never received *(receiver; not required by this
+contract)*. It is sent because the side that can still do something about a lost
+delivery is the side that is holding it. Treat its presence as a cue to replay,
+not as an error.
 
 ## Payload
 
@@ -173,6 +200,63 @@ polling platform refuses to call an underpowered figure publishable, and a
 campaign dashboard that renders it as a clean percentage has undone that in one
 hop. This is the single most important clause in the document.
 
+Three things the receiver does with the gate that this document did not ask for
+*(receiver)*:
+
+- **Per-question `publication`.** A question may carry its own
+  `{ quotable, blockers }`, which overrides the top-level block for that
+  question only. Omit it and the top-level gate applies — so a payload shaped
+  exactly like the example below is accepted unchanged.
+- **`quotable: false` with an empty `blockers` array is refused** with a `422`.
+  A figure withheld without a reason renders as "unavailable", and that is how
+  somebody talks themselves into using the number anyway. If the sender marks
+  something unquotable it must say why.
+- **Breakdown rows store their verdict separately** rather than as JSON inside
+  the question, on the grounds that a subgroup whose gate is buried in a blob
+  is a subgroup whose gate gets forgotten by whoever writes the chart.
+
+One thing to know about the far end: **nothing charts these numbers yet.**
+`GET /v1/polls` returns JSON. So the gate is currently enforced by storage and
+by documentation, not by a renderer refusing to draw a bar. Whoever writes that
+renderer inherits the hard requirement above.
+
+## Unknown fields are refused
+
+Every level of the payload is validated against an allowlist, **including
+`method`** — methodology is aggregate by definition only while somebody is
+checking, and that block is where a `respondents` array would be easiest to
+hide. An unrecognised field earns a `422` naming it *(receiver)*.
+
+A field matching a respondent-level name — `phone`, `phone_hash`, `respondent`,
+`call_id`, `transcript`, `verbatim`, `elector` and their kin — gets a longer
+refusal that explains the anonymity reason rather than a generic one, on the
+theory that whoever sent it has misunderstood the integration rather than
+mistyped.
+
+The cost, which the sender must plan around: **this side cannot add a field
+until the receiving side accepts it.** It is a one-line change there, but it is
+a change there, and a sender that starts emitting a new key without saying so
+will have every delivery refused.
+
+A corollary worth stating: there is **no campaign field anywhere in the
+payload**. The key is the campaign. `campaign_id` at the top level is refused
+like any other unknown field, which is what stops a token delivering into a
+campaign it was not issued for.
+
+### Limits
+
+Exceeding any of these is a `422`, not a truncation *(receiver)*:
+
+| Limit | Value | Applies to |
+| --- | --- | --- |
+| Text | 2000 chars | Question text, each blocker sentence |
+| Label | 400 chars | Answer labels, group names, poll name and topic, every `method` string |
+| Questions | 100 | per delivery |
+| Answers | 60 | per question |
+| Breakdowns | 40 | per delivery |
+| Rows | 80 | per breakdown |
+| Blockers | 20 | per gate |
+
 ## Idempotency and revision
 
 `delivery_id` is unique. A repeated POST with the same id stores nothing new and
@@ -217,13 +301,33 @@ raises no transfer question. That holds only while the "never crosses" list
 above holds. Anything identifying moving the other way would be an export from
 the EEA and runs into the same gate currently holding up voice canvassing.
 
-## Open questions
+Both sides have agreed this position, including that it holds conditionally
+rather than absolutely. The condition is the "never crosses" list, which is
+why that list is enforced in the receiver's parser and not just written here.
 
-1. Who issues and stores the token on the polling side, and where — it is a
-   credential for a third-party system and should not sit in a poll record.
-2. Are breakdowns delivered by default, or only when the pollster marks them
-   releasable? Subgroup figures are the most likely to be misused.
-3. Retention: how long does Politracker keep superseded deliveries, and does a
-   campaign ending delete them?
-4. Does a campaign see a poll's existence before results arrive — a
-   "requested · in field · delivered" record — or only the result?
+## The four questions, settled
+
+1. **Token storage.** This side: an environment variable, with the endpoint URL
+   in a platform setting. Not in a poll record — it is a credential for another
+   system.
+2. **Breakdowns: delivered by default.** Every row carries its own verdict, so a
+   subgroup that should not be published arrives marked and is stored that way,
+   and the far end will not chart what has not been cleared. Withholding them is
+   the worse option: a campaign that cannot see East End at all will ask for it
+   by other means, and those means have no gate on them.
+3. **Retention: superseded deliveries kept indefinitely.** They are aggregate
+   and tiny, and the point of append-only is that the history exists. A campaign
+   ending removes all of it — every table cascades from the campaign.
+4. **Poll visible before results: not yet, and the gate makes it cheap when
+   wanted.** An early delivery with `quotable: false` and a blocker saying
+   fieldwork is open shows as "in field" with no chartable number. That is a
+   product decision at the far end, not a schema one, so nothing is needed here.
+
+## Still open
+
+- **No key exists.** When the sender is ready to test, the far end issues one
+  against a real campaign. Do not invent a token to try the path: an unknown key
+  returns a flat `401` and tells you nothing, so a fabricated one buys a
+  misleading failure rather than a test.
+- **Nothing renders the numbers** at the far end yet, so the gate has no
+  enforcement in the one place a reader would actually meet it.
