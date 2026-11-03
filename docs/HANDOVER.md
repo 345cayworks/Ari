@@ -320,16 +320,24 @@ Three things worth knowing before changing any of it:
 
 Worth recording because the obvious economy, once this is working, is for each
 side to stop reading the other's code — and that is where the next one gets
-through. Corrections crossed in both directions throughout, roughly evenly
-split. Not one was caught by a test on this side or by reading the other
-side's summary of its own work.
+through. Corrections crossed in both directions throughout; no count is given
+because whether a redundant guard that never fired or a design argument one
+side won counts as an error is a definitional question, and a tally's only use
+is to someone deciding where to spend effort. Nothing was caught by either
+side reading the other's summary of its own work.
 
-What did catch them, with an example each:
+Four mechanisms did the work, and the first is the one most easily written out
+of a story like this:
 
-- **Running our payload through their real parser.** `parseDelivery` is pure,
-  so it bundles with esbuild and runs offline against no database. It caught
-  the builder emitting a `with_a_view` base larger than the sample that
-  answered at all — a percentage of a base bigger than the poll.
+- **A strict validator, running unattended.** Their `parseDelivery` refuses a
+  with-a-view base larger than the number who answered at all
+  (`feed.ts:496`) — arithmetic nobody asked them to check, in a validator
+  written for a different purpose. It caught this builder emitting exactly
+  that: a percentage of a base bigger than the poll. The harness was ours and
+  the check was theirs, and it is the one fault in the whole exchange found by
+  code rather than by a person. Any version of this record that says "none
+  caught by a test" argues against the thing that worked without supervision —
+  which is what the first draft of this section did.
 - **Reading their implementation instead of their report.** Found a
   `touchFeedKey` that was defined, exported and called from nowhere, under a
   documented promise that key use was logged.
