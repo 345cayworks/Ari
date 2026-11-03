@@ -285,6 +285,16 @@ Three things worth knowing before changing any of it:
    wire. They had checked the seven by eye and reported agreement, which is a
    prose claim about code — the thing that has gone wrong repeatedly here — so
    it is a check now instead.
+
+   **Without `--parser` the script says so and does not claim to have
+   passed.** It used to print "All checks passed" after skipping the only part
+   that compares anything against the other end, which made the script an
+   instance of the failure it exists to catch. It now states that the contract
+   was not checked, and when a parser is supplied it prints how old the bundle
+   is, a bundle being evidence frozen at the moment it was built. It still
+   exits 0 either way — the builder's own checks really did pass, and there is
+   no CI here to mislead. If this is ever wired into CI, pass `--parser` or the
+   contract goes unverified behind a green build.
 3. **A refusal consumes no sequence; a failure might have.** A sequence is
    spent if and only if the far end answered 2xx — a 401 or 403 returns before
    the payload is read and a 422 before it is stored. So a `REFUSED` row is
