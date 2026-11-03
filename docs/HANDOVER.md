@@ -157,9 +157,22 @@ the `NEON_*` names the cloud environment used.
    better. Redeploy is not needed — a secret takes effect on its own.
 
    Then **use "Deliver as a test"** on the poll's Results tab for the first
-   one. There is no staging campaign at the receiving end and no way to delete
-   a delivery: append-only means append-only, and the only removal path takes
-   the campaign's register of electors with it. The test button marks the
+   one. There is no staging campaign at the receiving end and **no delete
+   path through the API** — but be precise about what that does and does not
+   mean, because the stronger version was stated here before and it was
+   wrong. Their append-only guarantee is a trigger that refuses `UPDATE`, so
+   no figure can be rewritten in place and no correction can pass as a quiet
+   edit. `DELETE` was always permitted, for the campaign cascade. So a row
+   *can* be removed directly in their database, and one was: they sent a
+   zero-data trial on 3 November and deleted it afterwards, precisely so it
+   would not sit on sequence 1.
+
+   A delivery of ours is therefore permanent **by their policy, not by
+   mechanism**. They have said they would not remove one, and that if it ever
+   needed removing it should be our call and recorded as such. Treat it as
+   irreversible when deciding what to send — that is what the test marking is
+   for, and a row should be honest whether or not it could be undone — but do
+   not tell anyone it is impossible to undo. The test button marks the
    delivery unquotable and attaches a sentence saying in plain words that it
    is a trial and not a measurement of opinion, which is what makes a
    permanent row honest rather than merely harmless. The target campaign is
@@ -357,16 +370,20 @@ against it:
    is recorded as DUPLICATE, not FAILED, because a FAILED row offers "send it
    again unchanged" and that would re-send into a permanently spent number.
 
-   **Both sides are now on current builds, so the 409 is live rather than
-   aspirational.** They report deploying version `ff4605b8`, which carries the
-   409 and the key-use recording — that is their report, not observable from
-   here: both need a real feed key to exercise and no key has been issued.
-   What is observable is that their endpoint answers 401 for an unknown key
-   rather than 500, so the feed-key lookup executes in production.
+   **Both sides are now on current builds and most of their half is now
+   measured rather than argued.** On 3 November they sent a zero-data trial
+   through their own live endpoint and read it back: 202 from the Worker, all
+   three tables written, `method` returning as a jsonb object rather than
+   text, blockers and answers as arrays, `pct_with_a_view` as null rather than
+   the string "null", the uuid-array parameter and the window function and the
+   gap set-difference all exercised against real rows, and `last_used_at`
+   written through `ctx.waitUntil`.
 
-   Until a delivery has actually been made, treat a 500 from them as
-   diagnosable rather than impossible — the conflict path has never run with
-   a credential at either end.
+   One thing that still is not measured, and silence on it is not success:
+   `GET /v1/polls` needs a signed-in session, so the *read* through Hyperdrive
+   on workerd is inferred from the write having used the same client on the
+   same path. Only a person opening that page closes it.
+
 
 7. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type

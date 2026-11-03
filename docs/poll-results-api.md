@@ -77,14 +77,16 @@ The token is:
 - **write-only** — it reaches exactly one endpoint and cannot read anything;
 - **revocable**, and revocation takes effect immediately;
 - **logged** on use — with two caveats that were not true when this line was
-  first written, and one that is still not true today.
+  first written, and one that stayed untrue for a while after.
 
   The claim was false when agreed. The receiver had a `touchFeedKey` that was
   defined, exported and called from nowhere, so `last_used_at` could only ever
   have been null. Checked at the commit in question rather than taken on
   report. It is fixed at their end (`ab223d0`, recorded through
-  `ctx.waitUntil` so a failed bookkeeping write cannot fail a delivery) but
-  **not yet deployed**, so in the running Worker the column is still null.
+  `ctx.waitUntil` so a failed bookkeeping write cannot fail a delivery), and
+  as of 3 November it is deployed **and observed**: a trial delivery set
+  `last_used_at` one second before its key was revoked, which also shows the
+  detached write landing rather than being dropped when the response went out.
 
   And it means less than it sounds like. Use is recorded on **any
   authenticated call**, including one whose payload is then refused with a
@@ -481,6 +483,8 @@ why that list is enforced in the receiver's parser and not just written here.
   misleading failure rather than a test.
 - **Nothing renders the numbers** at the far end yet, so the gate has no
   enforcement in the one place a reader would actually meet it.
-- **Key use is not recorded in the far end's running deployment.** Committed,
-  not deployed. Until it is, `last_used_at` stays null whatever this side
-  does.
+- ~~Key use is not recorded in the far end's running deployment.~~ Deployed
+  and observed, 3 November. Struck through rather than deleted: this document
+  was wrong about this twice — first promising a column nothing wrote, then
+  describing a fix that had not shipped — and anyone who relied on either
+  should be able to see that the line moved rather than find it tidy.
