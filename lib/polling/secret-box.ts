@@ -135,10 +135,23 @@ export async function open(stored: string): Promise<string | null> {
  * which is the only question an operator actually has — and eight hex is too
  * short to help anybody brute-force the token it came from.
  */
-export async function fingerprint(plaintext: string): Promise<string> {
+/**
+ * The full SHA-256 of a string, lowercase hex.
+ *
+ * Exported so the whole 64 characters can be asserted and not only the eight
+ * the fingerprint shows. That distinction is the point: this digest call and
+ * `bytes()` also feed the HKDF derivation in `key()`, and the first eight hex
+ * of a digest is no constraint at all on a function producing key material. A
+ * hash agreeing with SHA-256 on the first four bytes and diverging afterwards
+ * would satisfy every fingerprint vector and still be the wrong hash.
+ */
+export async function digestHex(plaintext: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes(plaintext));
-  return [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 8);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function fingerprint(plaintext: string): Promise<string> {
+  // Visibly a slice of the full digest rather than its own computation, so the
+  // two cannot drift and the eight characters inherit whatever pins the 64.
+  return (await digestHex(plaintext)).slice(0, 8);
 }

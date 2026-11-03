@@ -592,11 +592,29 @@ against it:
    withdraws the key it produced. Our key is untouched by any of it. If a
    fresh one is ever wanted, that route works and the old one can be revoked.
 
-      `npm run check:secret-box` has 16 assertions, each paired with the thing
+      `npm run check:secret-box` has 22 assertions, each paired with the thing
    that would let it pass by accident: "it opens" beside "it does not open
    under a different secret", "the ciphertext differs each time" beside "both
    still open", and the fingerprint checked not to depend on the secret, since
    an operator compares it against what the far end reports.
+
+   Six of the 22 are known answers rather than properties, and that split is
+   the point. The eleven property assertions — eight hex characters, stable,
+   distinct, independent of the secret — pin the *shape* of the fingerprint
+   and not one pins its *value*: SHA-1, a different slice, or a pepper added
+   to the digest would satisfy all of them. Proven, not argued: adding a
+   pepper to the digest fails exactly the six known-answer checks and **zero**
+   of the property checks.
+
+   Two of the six assert all 64 characters of a published digest, and the
+   reason is specific. `bytes()` and the digest call feed the HKDF derivation
+   in `key()`, so this is a function producing key material, and the first
+   eight hex of a digest is no constraint on one — a hash agreeing with
+   SHA-256 on the first four bytes and diverging afterwards passes every
+   eight-character vector. Verified by mutation: zeroing the digest past byte
+   four fails the two full-digest checks and passes all four window vectors.
+   Only published values are asserted in full (`"abc"` and `""`), because an
+   expectation computed with the function under test asserts nothing.
 
 8. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type

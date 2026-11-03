@@ -12,7 +12,7 @@
  * different key", and "the ciphertext differs each time" is worthless without
  * "both still open".
  */
-import { fingerprint, open, seal } from "../lib/polling/secret-box";
+import { digestHex, fingerprint, open, seal } from "../lib/polling/secret-box";
 
 let failures = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -80,13 +80,43 @@ async function main(): Promise<void> {
   // The other platform found this same hole in its own suite by adding a
   // pepper to every digest in the product: seven tests failed, 788 passed.
   // Every expectation had been computed WITH the function under test.
+  // The whole digest first, not the window the fingerprint shows.
+  //
+  // Every vector below asserts eight hex characters. A hash agreeing with
+  // SHA-256 on those first four bytes and diverging afterwards satisfies all
+  // of them — and `bytes()` and this digest call also feed the HKDF
+  // derivation in `key()`, where four bytes of agreement are worth nothing.
+  // Truncation, a re-encoding or a second round applied after byte four is
+  // not an exotic mutation, and the eight-character window cannot see it.
+  //
+  // Only published digests can go here, which is the constraint that keeps the
+  // window vectors below. "pad-7" has no published digest, and an expectation
+  // computed with the function under test asserts nothing — so it stays eight
+  // characters rather than becoming a snapshot of today's output.
+  const published: [string, string][] = [
+    ["abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"],
+    ["", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"],
+  ];
+  for (const [input, expected] of published) {
+    const got = await digestHex(input);
+    check(`${JSON.stringify(input)} -> all 64 characters of the published digest`, got === expected, `got ${got}`);
+  }
+
   const vectors: [string, string, string][] = [
     // Published values, not snapshots of today's output.
     ["abc", "ba7816bf", "FIPS vector ba7816bf8f01cfea…"],
     ["", "e3b0c442", "empty-string digest, where a pepper shows up most plainly"],
     // Digest opens 54 01 c5 00 — two bytes under 0x10 inside the eight-char
-    // window, so dropping padStart(2, "0") yields 541c501c instead. "abc"
-    // cannot catch that: its low byte is the sixth, outside the slice.
+    // window, so dropping padStart(2, "0") yields 541c501c instead.
+    //
+    // Checked, not assumed: with the full digests asserted above, dropping
+    // padStart fails "abc" as well, because its sixth byte is 0x01 — inside
+    // the 64 characters even though it is outside the eight. So this is the
+    // second witness to padding rather than the only one, and it is kept
+    // because it is the one that survives at window level: if the published
+    // digests above were ever dropped, padding coverage would not go with
+    // them. An earlier version of this comment claimed "abc" could not catch
+    // it, which was true of the slice and false of the digest.
     ["pad-7", "5401c500", "per-byte zero padding"],
   ];
   for (const [input, expected, why] of vectors) {
