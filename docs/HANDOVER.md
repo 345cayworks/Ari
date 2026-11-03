@@ -317,6 +317,42 @@ Three things worth knowing before changing any of it:
    broken by their absence — but the receiving end would prefer them, and a
    campaign that cannot see a district at all will ask for it by other means.
 
+### How the faults in this integration were actually found
+
+Worth recording because the obvious economy, once this is working, is for each
+side to stop reading the other's code — and that is where the next one gets
+through. Nine corrections crossed between the two platforms while it was being
+built, five on this side. Not one was caught by a test here or by reading the
+other side's summary of its own work.
+
+What did catch them, with an example each:
+
+- **Running our payload through their real parser.** `parseDelivery` is pure,
+  so it bundles with esbuild and runs offline against no database. It caught
+  the builder emitting a `with_a_view` base larger than the sample that
+  answered at all — a percentage of a base bigger than the poll.
+- **Reading their implementation instead of their report.** Found a
+  `touchFeedKey` that was defined, exported and called from nowhere, under a
+  documented promise that key use was logged.
+- **The other side refusing a conclusion stated as settled.** A 422 left a
+  permanently gapped sequence here, and it was written off as acceptable.
+  Declaring it fine is what stopped the checking; it took an outside reader
+  with no stake in the claim to reopen it.
+- **Rereading our own code with a different purpose in mind.** A fresh
+  `delivery_id` on a corrected re-send broke the replay invariant added in the
+  same commit. Neither typecheck nor any test could see it, because both
+  halves were internally consistent.
+
+Two patterns worth carrying forward. **Redundant defences are not free** — the
+fresh id and their crude minimum-sample check were both extra protection for
+something already handled properly, and both introduced a fault the thing they
+duplicated did not have. And **a right conclusion resting on a wrong reason is
+the most durable error**: nothing downstream fails, so nothing sends anyone
+back to look, and the next reader reasons from the stated reason rather than
+the behaviour. The spec claimed only the sequence was constrained when
+`delivery_id` is constrained too, which is what makes reusing an id safe rather
+than merely allowed.
+
 ## Map of the code
 
 - `lib/polling/config.ts`: Retell tool definitions (`record_answer`, `add_to_do_not_call`, `schedule_callback`, `end_call`, optional `transfer_call`) and post-call analysis fields. This is the single source of truth for `scripts/retell-sync.ts`.
