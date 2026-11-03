@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { screenForPoll } from "@/lib/polling/calls";
 import { extractNumbers, NXX_SOURCED_AT } from "@/lib/polling/numbers";
 import { MAX_BATCH_NUMBERS } from "@/lib/polling/results";
-import { csvCell } from "@/lib/utils";
+import { csvBody, csvCell } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -162,7 +162,7 @@ export async function POST(
   }
 
   const stamp = new Date().toISOString().slice(0, 10);
-  return new NextResponse(lines.join("\r\n"), {
+  return new NextResponse(csvBody(lines), {
     headers: {
       "content-type": "text/csv; charset=utf-8",
       "content-disposition": `attachment; filename="screening-${stamp}.csv"`,

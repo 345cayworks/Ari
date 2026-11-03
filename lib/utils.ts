@@ -34,3 +34,18 @@ export function csvCell(value: unknown): string {
   const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
   return /[",\n\r]/.test(safe) || safe !== s ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
+
+/**
+ * A CSV file body: CRLF line endings and a UTF-8 byte-order mark.
+ *
+ * The BOM is the easy thing to leave out and the hard thing to notice. Excel
+ * on Windows opens a saved `.csv` in the system ANSI codepage unless the file
+ * starts with one, so every non-ASCII character arrives mangled — the em dash
+ * in a poll name came back as three Latin-1 characters. `charset=utf-8` on the
+ * response does not help: by the time Excel reads the file, the header is long
+ * gone. Found by downloading one and looking at the bytes, not by reading the
+ * code, which is the only way this kind of fault shows up.
+ */
+export function csvBody(rows: readonly string[]): string {
+  return "\uFEFF" + rows.join("\r\n");
+}

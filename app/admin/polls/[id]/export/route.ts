@@ -3,7 +3,7 @@ import { Role } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { compareQuestionIds } from "@/lib/polling/results";
-import { csvCell } from "@/lib/utils";
+import { csvBody, csvCell } from "@/lib/utils";
 import { loadPollResults } from "@/lib/polling/weighted";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +66,7 @@ export async function GET(
     ];
   });
 
-  const csv = [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+  const csv = csvBody([header, ...rows].map((r) => r.map(csvCell).join(",")));
   const filename = `${poll.name.replace(/[^\w-]+/g, "_").slice(0, 60) || "poll"}.csv`;
   return new NextResponse(csv, {
     headers: {
