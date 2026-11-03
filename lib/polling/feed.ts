@@ -139,6 +139,14 @@ export async function deliverPoll(
  * the unique index on (target, sequence) is what actually decides, and losing
  * the race means picking the next number up rather than overwriting anybody.
  * Neon over HTTP gives no advisory lock to take instead.
+ *
+ * A failed delivery does not block the ones behind it, and that is safe rather
+ * than merely convenient: the receiver computes its gaps as a set difference
+ * over 1..max, not from a high-water mark, so 5 may arrive before 4 and the
+ * gap closes by itself when 4 lands. Carrying on and backfilling is the
+ * intended shape. What must not happen is two deliveries claiming one number
+ * — that it refuses outright — which is why the number is read back off the
+ * row rather than recomputed anywhere.
  */
 async function allocate(
   target: string,
@@ -178,7 +186,21 @@ async function allocate(
   return null;
 }
 
-/** Re-send a stored delivery, unchanged, under its original `delivery_id`. */
+/**
+ * Re-send a stored delivery, unchanged, under its original `delivery_id`.
+ *
+ * Only ever the stored bytes. If the original payload cannot be reproduced,
+ * the answer is a **new** delivery with a new sequence, leaving the old number
+ * permanently missing — never current numbers pushed into the old slot.
+ *
+ * That rule has to live here, because the receiving end cannot enforce it: it
+ * has no way to tell a faithful replay from a regenerated one. What it does
+ * enforce is that a sequence is used once, so resequencing would either be
+ * refused or, worse, succeed and silently restate a figure. A permanent gap is
+ * the honest outcome — it reads as "a delivery was lost", which is true, and
+ * their `missingSequences` is a set difference that reports it for ever
+ * without needing a special case.
+ */
 export async function replayDelivery(id: string): Promise<DeliveryOutcome> {
   const config = await loadFeedConfig();
   if (!config.enabled) return { ok: false, reason: "The campaign feed is switched off." };
@@ -189,11 +211,33 @@ export async function replayDelivery(id: string): Promise<DeliveryOutcome> {
 
   const row = await prisma.pollDelivery.findUnique({
     where: { id },
-    select: { id: true, payload: true },
+    select: { id: true, sequence: true, payload: true },
   });
   if (row === null) return { ok: false, reason: "No such delivery." };
 
-  return send(row.id, config.endpointUrl, row.payload as unknown as DeliveryPayload);
+  // The stored payload must still be the one this row describes. If the two
+  // have come apart, something has rewritten a row that was meant to be
+  // immutable, and sending it would restate numbers under a sequence that
+  // already means something else. Refusing leaves the gap, which is the
+  // outcome the rule above asks for anyway.
+  const payload = row.payload as unknown as DeliveryPayload | null;
+  if (payload === null || typeof payload !== "object") {
+    return {
+      ok: false,
+      reason:
+        "This delivery has no stored payload, so it cannot be replayed faithfully. Deliver again to send current numbers under a new sequence; this one stays missing.",
+      id,
+    };
+  }
+  if (payload.sequence !== row.sequence || payload.delivery_id !== row.id) {
+    return {
+      ok: false,
+      reason: `This delivery's stored payload no longer matches the row (payload #${payload.sequence}, row #${row.sequence}). It will not be replayed. Deliver again to send current numbers under a new sequence.`,
+      id,
+    };
+  }
+
+  return send(row.id, config.endpointUrl, payload);
 }
 
 /**

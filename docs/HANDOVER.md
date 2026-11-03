@@ -40,6 +40,8 @@ Telegram message will do it; `/start` and `/whoami` return before the model is
 called.
 
 **Also not yet exercised:** campaign delivery has never made a request.
+`POST /v1/poll-results` does answer in production at the receiving end (an
+unknown key gets a 401, not a 500, so its tables really are reachable there).
 Migration `20261102223000_poll_delivery` is written but **not applied**, no
 `POLITRACKER_FEED_TOKEN` exists — the receiving end issues it and an invented
 one gets a flat 401 — and the `poll_feed` platform setting is absent, so the
@@ -104,10 +106,21 @@ the `NEON_*` names the cloud environment used.
 5. **Turn on campaign delivery**, in this order: apply
    `20261102223000_poll_delivery`; ask the Politracker end to issue a feed key
    for the campaign; put it in `POLITRACKER_FEED_TOKEN` as a Worker secret;
-   set `poll_feed` to `{ "enabled": true, "endpointUrl": "..." }`. Then
-   deliver the test poll and check the sequence, not just the 202 — a `200
+   set `poll_feed` to `{ "enabled": true, "endpointUrl": "..." }`. Then check
+   the sequence on the first delivery, not just the 202 — a `200
    already_stored` means the id was already held, which on a first delivery
    would mean something is wrong.
+
+   **Do not make the first delivery from the throwaway test poll.** There is
+   no staging campaign at the receiving end and no way to delete a delivery
+   through the API: append-only means append-only, and the only removal path
+   is deleting the campaign, which takes its register of electors with it. So
+   a delivery of invented numbers would sit in a real campaign's feed for
+   ever. Either deliver a real poll, or — if a live round trip is wanted
+   first — deliver one whose gate marks it unquotable with a blocker saying in
+   plain words that it is a test and not fieldwork. That is permanent too, but
+   it is permanently honest, and the receiver stores the blocker alongside the
+   figure.
 6. **Delete the test poll** `TEST — Cayman Pulse (safe to delete)` when done.
    The `Cayman Life` poll beside it is the user's; leave it alone.
 7. **`{{agent_name}}`** now appears in the live greeting and Role line. The

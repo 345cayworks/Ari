@@ -7,8 +7,9 @@ Politracker's to design against it.
 
 Status: **the receiving half is built and applied** (politracker migration
 `0015`: `campaign_feed_key`, `poll_delivery`, `poll_figure`, `poll_breakdown`).
-The sender is not built. No key has been issued and no delivery has been
-received, so nothing is live end to end.
+The sender is built (`lib/polling/delivery.ts`, `lib/polling/feed.ts`), and
+`POST /v1/poll-results` answers in production. No key has been issued and no
+delivery has been made, so nothing is live end to end.
 
 Where this document and the receiver differ, the receiver is what a delivery
 actually meets. Everything below marked *(receiver)* was read out of its
@@ -215,10 +216,14 @@ Three things the receiver does with the gate that this document did not ask for
   the question, on the grounds that a subgroup whose gate is buried in a blob
   is a subgroup whose gate gets forgotten by whoever writes the chart.
 
-One thing to know about the far end: **nothing charts these numbers yet.**
-`GET /v1/polls` returns JSON. So the gate is currently enforced by storage and
-by documentation, not by a renderer refusing to draw a bar. Whoever writes that
-renderer inherits the hard requirement above.
+One thing to know about the far end, and worth stating precisely because this
+document could be read as a stronger claim: **today the receiver stores the
+gate faithfully and nothing reads it.** `GET /v1/polls` returns JSON; nothing
+charts the numbers. So the gate is enforced by storage, by the parser refusing
+an unquotable figure that gives no reason, and by documentation — not by a
+renderer declining to draw a bar. Whoever writes that renderer inherits the
+hard requirement above, and until they do, "the receiver honours the gate"
+means it keeps it intact rather than acts on it.
 
 ## Unknown fields are refused
 
@@ -286,6 +291,31 @@ because it looks correct.
 
 The provider should also retry a failed delivery with the same `delivery_id`,
 which idempotency makes safe.
+
+### A lost delivery leaves a permanent gap
+
+A replay sends the **stored payload**, byte for byte. When the original cannot
+be reproduced, the answer is a new delivery under a **new** sequence, and the
+old number stays missing for ever. Current numbers must never be pushed into an
+old slot.
+
+This rule can only live with the provider. The receiver has no way to tell a
+faithful replay from a regenerated one — both arrive as a payload under a
+sequence — so nothing at its end can catch the substitution. What it does
+enforce is that a sequence is used once, which means resequencing either gets
+refused or succeeds and silently restates a published figure under a number
+that already meant something else.
+
+A permanent gap is the honest reading. It says a delivery was lost and never
+recovered, which is true, and it needs no special case at either end: the
+receiver's gap list is a set difference over `1..max`, so the number simply
+stays in it. The corollary is that storing what was sent earns its keep only
+for the window in which a replay is still faithful; outside that window a new
+sequence is the correct answer and not a fallback.
+
+Gaps also close by themselves. The receiver does not require sequences to
+arrive in order — 5 may land before 4 — so a delivery that fails need not
+block the ones behind it. Carry on and backfill.
 
 If automated recovery is wanted later, the provider can expose a read endpoint
 listing deliveries for a campaign. That requires a credential in the other
