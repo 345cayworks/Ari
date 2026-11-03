@@ -32,6 +32,7 @@ Everything below was verified against the live deployment, not just built:
 | Results charts and the publication gate | rendered and inspected in a browser; the gate fires on the test poll |
 | Question-set templates | four sets on the Setup tab, previewed on a throwaway poll |
 | Option rotation | 400-rotation test: scales only reverse, unordered options average dead centre, terminal options never move |
+| First real delivery | **Landed.** Sequence 1, `202 ACCEPTED`, test poll, 3 respondents. Gate `quotable: false` with the test notice first and the sample-size reason second; `pct_with_a_view` came back as a real `null` on the no-view answer; `method` as an object; `missing` as an empty array; row and payload agree on id and sequence |
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
