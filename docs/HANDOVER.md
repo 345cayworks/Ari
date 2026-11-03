@@ -361,16 +361,39 @@ against it:
    neither side had considered — a deletion at one end that the other does
    not know about.
 
-   Two ways out, and it is an operator's decision rather than a technical one.
-   Delete the row here so sequence 1 is free on both sides, which costs the
-   local record that the delivery happened — recoverable from this document
-   and the git history, and arguably correct since an `ACCEPTED` row now
-   asserts something false. Or keep it, deliver as 2, and accept a standing
-   gap at 1 that does not mean what a gap means.
+   **Three ways out, not two.** This document said there was no third option
+   because nothing in the contract marks a sequence as withdrawn and the
+   allocator keys off `max(sequence)` regardless of status. Both true, and the
+   conclusion was still wrong: it searched this side and the contract, and the
+   fix lives entirely in the receiver's own store. When their operator removes
+   a delivery, that end can record the sequence as *withdrawn* and exclude
+   withdrawn numbers from its gap list. A tombstone, needing nothing from
+   here and no change to the contract. They have offered to build it.
 
-   There is no third option: nothing in the contract marks a sequence as
-   withdrawn, and the allocator keys off `max(sequence)` regardless of status,
-   so a status change would not free the number.
+   So the choice is:
+
+   1. **Keep the row and let them tombstone it.** Their gap list reports `[1]`
+      until that ships, then stops. Nothing is deleted here.
+   2. **Delete the row here.** Sequence 1 is immediately free both sides and
+      the next delivery is a clean 1, at the cost of the local record.
+   3. Keep it and build nothing — a standing `[1]` on their dashboard saying a
+      delivery was lost when one was withdrawn.
+
+   Also worth correcting: this document called an `ACCEPTED` row asserting a
+   delivery the far end no longer holds "a false claim in data". That was too
+   strong. The row records that at 08:34:20 a delivery was sent and accepted,
+   which happened and remains true. What is no longer true is that they still
+   hold it — and a delivery record is a record of an event, not a mirror of
+   the far end's current state. Divergence after a withdrawal is what a
+   withdrawal *is*.
+
+   **The invariant nothing checks**, which is their formulation and the best
+   thing to come out of this: it is not that sequences are contiguous, it is
+   that *both ends agree on what each number means*. The 422 case and this one
+   arrive from opposite directions — a refusal consuming a sequence it never
+   stored, a deletion freeing one the sender still holds — and both end in a
+   gap that means loss and is not loss. The machinery for the first was built
+   while walking into the second.
 
    It is now also an agreement, which is weaker than a mechanism and worth
    more than nothing: their end has undertaken not to write to a campaign's
