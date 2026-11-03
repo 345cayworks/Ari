@@ -66,9 +66,16 @@ const OUTCOMES = [
 function main(): void {
   console.log("The dial list");
 
+  // Row 1 carries the frame's real default. Its column is NOT NULL DEFAULT
+  // 'not_attempted', so a number awaiting its first report reads that and
+  // never an empty cell — the earlier fixture used an empty cell, which is why
+  // these checks stayed green while the write-back could not report anything:
+  // its progress marker skips rows that already carry a disposition, and read
+  // literally that was every row. Row 3 keeps the empty-cell case, since an
+  // export that omits the value must behave the same way.
   const csv = [
     "e164,operator,carrier_name,disposition,attempts,last_attempt_at",
-    "+13455550101,Flow,\"Cable & Wireless (Cayman), Ltd.\",,0,",
+    "+13455550101,Flow,\"Cable & Wireless (Cayman), Ltd.\",not_attempted,0,",
     "+13455550102,Digicel,Digicel Cayman,disconnected,1,2026-11-01T14:02:00Z",
     "+13455550103,Flow,\"Cable & Wireless (Cayman), Ltd.\",,0,",
     "",
@@ -83,7 +90,25 @@ function main(): void {
     rows[1]?.disposition === "disconnected",
     JSON.stringify(rows[1]),
   );
-  check("an undialled row has a null disposition", rows[0]?.disposition === null);
+  check(
+    "the frame's not_attempted default reads as no disposition",
+    rows[0]?.disposition === null,
+    JSON.stringify(rows[0]?.disposition),
+  );
+  check("an empty disposition cell does too", rows[2]?.disposition === null);
+  // Paired with the two above: a parser that nulled everything would pass them
+  // and would also erase the progress marker, re-reporting every number on
+  // every run.
+  check(
+    "a disposition the frame does hold survives",
+    rows[1]?.disposition === "disconnected",
+    JSON.stringify(rows[1]?.disposition),
+  );
+  check(
+    "case is not what decides it",
+    parseDialList(["e164,disposition", "+13455550105,NOT_ATTEMPTED"].join("\n"))[0]?.disposition ===
+      null,
+  );
   check("the operator survives", rows[0]?.operator === "Flow", String(rows[0]?.operator));
   check("a trailing blank line is not a row", !rows.some((r) => r.e164 === ""));
 

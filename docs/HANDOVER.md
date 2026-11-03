@@ -1054,8 +1054,20 @@ counts the distinct values the mapping can emit and fails if it is not two.
 **Two things to know before the first real run.**
 
 1. The live disposition value is **confirmed accepted by the worker**, probed
-   2026-11-03. Both halves of the payload are now verified: the worker's
-   enumeration lists `disconnected` and `live`. It rejected `live` on the
+   2026-11-03: the worker's enumeration lists `disconnected` and `live`.
+
+   That confirms the frame will *take* both values. It said nothing about
+   whether this side ever *sends* them, and for a while it did not: the
+   write-back used the frame's own `disposition` column as its progress
+   marker, skipping any row that already carried one — but that column is
+   `NOT NULL DEFAULT 'not_attempted'`, so every row carried one and every row
+   was skipped. `reportFrameOutcomes` returned `ok: true, unassigned: 0,
+   live: 0` and the banner read "Reported to the frame: 0 … 0". Found in
+   review, fixed by normalising `not_attempted` to null in `parseDialList`,
+   and verified against the live export: 2,000 rows parsed, 2,000 eligible,
+   where it had been 0. The check script's fixture had spelled an unreported
+   row as an empty cell, which the frame never emits — that is why 41 green
+   assertions covered none of it. It rejected `live` on the
    first probe — every value it took besides `disconnected` and
    `not_attempted` named an outcome — so rather than substitute one here, the
    value was added at the far end, where it needed three changes and a table

@@ -55,7 +55,14 @@ export interface RddSampleDraw {
 export interface RddDialRow {
   e164: string;
   operator: string | null;
-  /** The disposition the frame already holds, if this number has been dialled. */
+  /**
+   * The disposition the frame already holds, or null if it holds none.
+   *
+   * Null covers both an empty cell and the frame's `not_attempted` default —
+   * see `DISPOSITION_NOT_REPORTED`. The distinction does not exist for any
+   * caller, and collapsing it here is what stops the write-back's progress
+   * marker reading "already reported" for a number never reported.
+   */
   disposition: string | null;
 }
 
@@ -305,10 +312,14 @@ export function parseDialList(csv: string): RddDialRow[] {
     const e164 = cells[iE164] ?? "";
     if (e164 === "") continue;
     const disposition = iDisposition === -1 ? "" : (cells[iDisposition] ?? "");
+    const reported =
+      disposition === "" || disposition.toLowerCase() === DISPOSITION_NOT_REPORTED
+        ? null
+        : disposition;
     rows.push({
       e164,
       operator: iOperator === -1 ? null : (cells[iOperator] ?? "") || null,
-      disposition: disposition === "" ? null : disposition,
+      disposition: reported,
     });
   }
   return rows;
@@ -375,6 +386,25 @@ export function operatorMix(rows: RddDialRow[]): Record<string, number> {
 
 /** The frame's value for a number that does not exist. */
 export const DISPOSITION_UNASSIGNED = "disconnected";
+
+/**
+ * The frame's spelling for a number it has never been told anything about.
+ *
+ * Its `sample_members.disposition` column is `NOT NULL DEFAULT
+ * 'not_attempted'`, so every row of the export carries a value and a number
+ * awaiting its first report reads `not_attempted` — never an empty cell.
+ * Observed on the live frame: `+13453210151,Digicel Cayman Limited,,
+ * not_attempted,0,`.
+ *
+ * This matters because `reportFrameOutcomes` uses the frame's own column as
+ * its progress marker, skipping anything that already carries a disposition.
+ * Read literally, that skipped everything, and the write-back reported
+ * nothing while returning success. So the sentinel is normalised away here, at
+ * the parse boundary, rather than special-cased at the one call site: the
+ * field means "what the frame already knows about this number", and "nothing
+ * yet" is `null`.
+ */
+export const DISPOSITION_NOT_REPORTED = "not_attempted";
 
 /**
  * The single value reported for every number that turned out to exist.
