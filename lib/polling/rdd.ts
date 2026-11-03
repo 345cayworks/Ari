@@ -384,26 +384,20 @@ export const DISPOSITION_UNASSIGNED = "disconnected";
  * that was engaged, a number that refused and a number that completed the
  * whole questionnaire all send this.
  *
- * CONFIRMED REJECTED BY THE WORKER, 2026-11-03. Probed with a deliberately
- * invalid value, which the worker refuses with 400 and an enumeration:
+ * CONFIRMED ACCEPTED BY THE WORKER, 2026-11-03. Established by probing with
+ * a deliberately invalid value, which the worker refuses with 400 and an
+ * enumeration of what it takes — so the vocabulary is readable without
+ * writing anything to a real number. "live" now appears in it, alongside
+ * "disconnected", which confirms both halves of the payload.
  *
- *   {"error":"Invalid disposition","allowed":["not_attempted","complete",
- *    "refused","partial","no_answer","busy","voicemail","callback",
- *    "disconnected","ineligible","language_barrier"]}
- *
- * So "disconnected" is accepted and the unassigned half is sound. No value on
- * `LIVE_DISPOSITIONS` is accepted, and every accepted value other than
- * "disconnected" and "not_attempted" names an outcome — four of them
- * ("complete", "refused", "no_answer", "voicemail") are among the strings
- * `scripts/check-rdd.ts` asserts can never reach this allowlist.
- *
- * The fix belongs at the far end: add "live" to the worker's accepted list.
- * Substituting one of its existing values would mean either lying ("complete"
- * for a refusal, "no_answer" for an eight-minute interview) or disclosing the
- * outcome, and the contract above forbids both. Until the worker accepts it,
- * the live half of every write-back is rejected per number — see the
- * operational note in `docs/rdd-sampling-frame.md` for why that is worse than
- * the frame simply learning nothing.
+ * It did not at first. The initial probe returned a list in which every value
+ * but "disconnected" and "not_attempted" named an outcome, four of them
+ * ("complete", "refused", "no_answer", "voicemail") among the strings
+ * `scripts/check-rdd.ts` asserts can never reach the allowlist here. Nothing
+ * on that list could be sent truthfully: "complete" for a refusal is a lie,
+ * and any of them discloses what the contract above withholds. So the value
+ * was added at the far end rather than substituted at this one — which is the
+ * precedent worth keeping if the frame ever wants a richer disposition again.
  */
 export const DISPOSITION_LIVE_DEFAULT = "live";
 

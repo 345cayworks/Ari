@@ -259,9 +259,13 @@ buys a poll.
   same as a campaign feed key. Recoverable — paste it again — but not obvious.
   It also breaks every `phoneHash` already recorded, which is why the handover
   says it can never change now that poll calls exist.
-- The live disposition value is **confirmed rejected by the worker**, probed
-  2026-11-03 with an invalid value, which the worker refuses with 400 and an
-  enumeration of what it takes:
+- The live disposition value is **confirmed accepted by the worker**, probed
+  2026-11-03. The probe is an invalid value, which the worker refuses with 400
+  and an enumeration of what it takes — so the vocabulary can be read without
+  writing to a real number. It now ends `…,"language_barrier","live"`.
+
+  It was rejected on the first probe. The list then held only outcome-shaped
+  values besides `disconnected` and `not_attempted`:
 
       {"error":"Invalid disposition","allowed":["not_attempted","complete",
        "refused","partial","no_answer","busy","voicemail","callback",
@@ -272,24 +276,39 @@ buys a poll.
   value besides `disconnected` and `not_attempted` names an outcome — four of
   them are strings `check:rdd` asserts can never reach the allowlist.
 
-  **The one-line change belongs on the worker: add `live` to its accepted
-  list.** Picking one of its existing values would mean lying (`complete` for
-  a refusal, `no_answer` for a completed interview) or disclosing the outcome,
-  and the contract forbids both. Nothing changes on this side.
+  Picking one of its existing values would have meant lying (`complete` for a
+  refusal, `no_answer` for a completed interview) or disclosing the outcome,
+  so the value was added at the far end instead. Nothing changed on this side.
 
-  **Do not run a real wave until the worker takes it**, and the reason is not
-  the one first written here. The worker computes the rate as
+  **It was not the one-line change it looked like.** Three definitions had to
+  move together in the worker: `DISPOSITIONS` in `src/types.ts` (what the API
+  validates against), `LIVE_DISPOSITIONS` beside it (what sets
+  `numbers.liveness = 'confirmed'`), and a `CHECK` constraint on
+  `sample_members.disposition`, which needed a table rebuild because SQLite
+  cannot alter one in place. Adding it to the first alone would have produced
+  a 2xx with a constraint failure underneath; adding it to the first two would
+  have produced a 2xx that updated nothing the assignment rate counts. Worker
+  version `3580ac68`, migration `0004_live_disposition.sql`.
+
+  The frame still reports `assignmentRateSource: "default_estimate"` at 0.28
+  until 100 or more numbers resolve, and that is the figure an oversample is
+  computed against until then. The worker computes the rate as
   `live / (live + dead)` over `numbers.liveness`, guarded by
   `if (basis < 100 || live === 0) return 0.28`. So a resolution set that is
   entirely disconnected does **not** drag the rate to zero — `live === 0`
   short-circuits to the starting estimate, and the rate simply never becomes
-  `observed`. The damage is quieter and permanent: every disconnected number
-  from that wave is written to `numbers.liveness = 'dead'` for good, while the
-  live numbers dialled alongside them are rejected and recorded nowhere. When
-  `live` is finally accepted and the rate does start measuring, those orphaned
-  dead numbers remain in the denominator with no live counterweight, so the
-  first observed rate is biased low — and a rate that is too low makes the next
-  oversample too large.
+  `observed`.
+
+  That matters for a reason worth keeping even though it did not come to pass
+  here: if the live half is ever rejected again while the unassigned half
+  still lands, the failure is silent and cumulative. Every disconnected number
+  is written to `numbers.liveness = 'dead'` permanently, while the live
+  numbers dialled beside them are recorded nowhere, so the dead ones sit in
+  the denominator with no live counterweight and the first observed rate comes
+  out too low — which makes the next oversample too large. No wave was run
+  during the window when `live` was being rejected, so no numbers were
+  orphaned this time. A write-back that reports per-number rejections is the
+  thing to watch for; it is not a cosmetic warning.
 - The draw is capped at `MAX_TARGET_LIVE` (1,200) live respondents, because the
   oversample behind that is already around 4,000 numbers and
   `MAX_BATCH_NUMBERS` is 5,000.

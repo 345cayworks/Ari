@@ -908,23 +908,27 @@ counts the distinct values the mapping can emit and fails if it is not two.
 
 **Two things to know before the first real run.**
 
-1. The live disposition value is **confirmed rejected by the worker**, probed
-   2026-11-03: it answers 400 `{"error":"Invalid disposition","allowed":[...]}`
-   listing `not_attempted, complete, refused, partial, no_answer, busy,
-   voicemail, callback, disconnected, ineligible, language_barrier`.
-   `disconnected` is accepted, so the unassigned half is sound; no live value
-   this side allows is. Every other accepted value names an outcome, so there
-   is nothing to substitute — the fix is to add `live` to the **worker's**
-   list, one line at that end, and nothing changes here. Settings stays a
-   `<select>` over the allowlist, not a text box, so a later operator still
-   cannot type `completed` into it. **Do not run a real wave first:** the live
-   half would be rejected per number, and while the rate does not collapse
-   (the worker short-circuits to its 0.28 estimate when no live number has
-   resolved), every disconnected number is written to `liveness = 'dead'`
-   permanently while its live neighbours are recorded nowhere. The first
-   measured rate afterwards is then biased low, which oversamples the next
-   draw. An earlier version of this note said the rate is dragged toward zero;
-   that was asserted without reading the worker, and is wrong.
+1. The live disposition value is **confirmed accepted by the worker**, probed
+   2026-11-03. Both halves of the payload are now verified: the worker's
+   enumeration lists `disconnected` and `live`. It rejected `live` on the
+   first probe — every value it took besides `disconnected` and
+   `not_attempted` named an outcome — so rather than substitute one here, the
+   value was added at the far end, where it needed three changes and a table
+   rebuild rather than the one line it looked like (worker `3580ac68`,
+   migration `0004`). Settings stays a `<select>` over the allowlist, not a
+   text box, so a later operator still cannot type `completed` into it.
+
+   Worth keeping from the window when it was rejected: if the live half is
+   ever refused again while the unassigned half still lands, the failure is
+   silent and cumulative. The rate does not collapse — the worker
+   short-circuits to its 0.28 estimate when no live number has resolved — but
+   every disconnected number is written to `liveness = 'dead'` permanently
+   while its live neighbours are recorded nowhere, so the first measured rate
+   afterwards comes out too low and oversamples the next draw. No wave ran
+   during that window, so nothing was orphaned. A write-back reporting
+   per-number rejections is the signal to stop. (An earlier version of this
+   note said the rate is dragged toward zero. That was asserted without
+   reading the worker and is wrong.)
 2. The write-back refuses to run if more than 95% of a batch failed to dial.
    `dial_failed` is also what a dead SIP trunk looks like, and a batch reported
    wholesale as disconnected would permanently burn live numbers out of a
