@@ -36,7 +36,7 @@ Everything below was verified against the live deployment, not just built:
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
-| Worker carrying the sender | deployed, version `4ecbf466-07a2-41c2-8cef-b9c507c98561`, 2.12 MB gzipped, on **two** custom domains: `polimeter.cayworks.net` (new) and `polling.cayworks.net` (kept — the Retell and Telegram webhooks are registered against it). Both answer 200. Confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form and fingerprint prompt |
+| Worker carrying the sender | deployed, version `4c964713-39bb-4c9f-941a-3b55f173d5a9`, 2.07 MB gzipped, on **two** custom domains: `polimeter.cayworks.net` (new) and `polling.cayworks.net` (kept — the Retell and Telegram webhooks are registered against it). Both answer 200. Confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt and the number screener |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -378,9 +378,16 @@ the expected counts derived by reading OfReg's table rather than by recording
 what the code said. Four mutations confirm they discriminate: dropping the note
 exclusions fails 10, a new unparsed OfReg note fails 6, removing duplicate
 detection fails 4, reverting the 7-digit fix fails 4. `next build` is clean and
-registers the route. The route returns 403 to an unauthenticated POST, so the
-handler executes. **The signed-in flow has not been exercised** — nobody has
-pasted a list into the form and read the panel — and none of this is deployed.
+registers the route.
+
+Deployed as version `4c964713` on 2026-11-03. Verified in the uploaded bundle
+rather than from the exit code: the three strings this change added are
+present, and so are two the change should not have touched — the first grep
+looked in Next's vendored runtime files and reported all five missing, which
+is the only reason that mistake was caught. Both custom domains answer 200 and
+`POST /admin/polls/[id]/screen` returns 403 without a session, so the handler
+is live and guarded. **The signed-in flow still has not been exercised** —
+nobody has pasted a list into the form and read the panel back.
 
 **Two limits worth knowing.** Cayman has number portability (345-767 is
 reserved for it) and a ported number keeps its original exchange, so the
