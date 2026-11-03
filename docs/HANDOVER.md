@@ -1014,6 +1014,76 @@ the behaviour. The spec claimed only the sequence was constrained when
 `delivery_id` is constrained too, which is what makes reusing an id safe rather
 than merely allowed.
 
+## The sampling frame: polls now have a defensible one
+
+Full reasoning in `docs/rdd-sampling-frame.md`. The part that matters for a
+handover:
+
+Polimeter can now draw a probability sample of Cayman mobile numbers from an
+external random-digit-dial worker instead of dialling an uploaded list. This
+is what the statistics were always missing. `cooperation_rate`, `effective_n`,
+`design_effect` and `margin_of_error` are only strictly defined over a sample
+with known selection probabilities; an uploaded list has none, so the whole
+weighting layer was sound and resting on nothing. A draw gives it a frame.
+
+**Set it up** on Settings → Random-digit-dial sampling frame: the frame's base
+URL and bearer key, sealed exactly as a campaign feed key is. Or set
+`RDD_BASE_URL` and `RDD_API_TOKEN` as Worker secrets, which is how the Retell
+credentials are held; a stored row wins over the environment. The key was
+deliberately never asked for in chat.
+
+**Expect seven in ten of every draw to be dead.** That is the measured shape of
+Cayman RDD, not a fault. Both paid screening services were tested against this
+frame and both answer per block rather than per number — Twilio Lookup returned
+"mobile" for 187 of 187 random numbers including a range with no subscribers at
+all. Dialling is the only test, so the dial is the screening step, and the draw
+is oversampled against the frame's own measured assignment rate. Do not propose
+re-adding a paid lookup.
+
+**The write-back is two values and must stay two values.** The frame holds
+plaintext numbers, this platform holds HMACs of them, so they are one hash
+apart; the anonymity every respondent was promised survives only because the
+frame never learns anything about answers. A number that failed to dial is
+reported `disconnected`; a number that existed is reported with one generic
+live value, identical for a refusal and for a completed interview. Nothing else
+goes — not completes, not consent, not sentiment, not "this number took part".
+The contract is written out at the top of `lib/polling/rdd.ts` and held shut
+mechanically by four guards, including an assertion in `npm run check:rdd` that
+counts the distinct values the mapping can emit and fails if it is not two.
+
+**Two things to know before the first real run.**
+
+1. The live disposition value is **confirmed accepted by the worker**, probed
+   2026-11-03. Both halves of the payload are now verified: the worker's
+   enumeration lists `disconnected` and `live`. It rejected `live` on the
+   first probe — every value it took besides `disconnected` and
+   `not_attempted` named an outcome — so rather than substitute one here, the
+   value was added at the far end, where it needed three changes and a table
+   rebuild rather than the one line it looked like (worker `3580ac68`,
+   migration `0004`). Settings stays a `<select>` over the allowlist, not a
+   text box, so a later operator still cannot type `completed` into it.
+
+   Worth keeping from the window when it was rejected: if the live half is
+   ever refused again while the unassigned half still lands, the failure is
+   silent and cumulative. The rate does not collapse — the worker
+   short-circuits to its 0.28 estimate when no live number has resolved — but
+   every disconnected number is written to `liveness = 'dead'` permanently
+   while its live neighbours are recorded nowhere, so the first measured rate
+   afterwards comes out too low and oversamples the next draw. No wave ran
+   during that window, so nothing was orphaned. A write-back reporting
+   per-number rejections is the signal to stop. (An earlier version of this
+   note said the rate is dragged toward zero. That was asserted without
+   reading the worker and is wrong.)
+2. The write-back refuses to run if more than 95% of a batch failed to dial.
+   `dial_failed` is also what a dead SIP trunk looks like, and a batch reported
+   wholesale as disconnected would permanently burn live numbers out of a
+   470,000-number universe with no record of which. Honest is near 70%.
+
+Nothing links to an electoral register and nothing may be added that does. A
+poll is an anonymous sample of a population; that is the reason RDD belongs
+here rather than in the casework platform, where a canvass is identified by
+design.
+
 ## Map of the code
 
 - `lib/polling/config.ts`: Retell tool definitions (`record_answer`, `add_to_do_not_call`, `schedule_callback`, `end_call`, optional `transfer_call`) and post-call analysis fields. This is the single source of truth for `scripts/retell-sync.ts`.

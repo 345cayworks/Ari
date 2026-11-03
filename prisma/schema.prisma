@@ -103,6 +103,7 @@ model Tenant {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   feedTargets          FeedTarget[]
+  rddSource            RddSource?
 }
 
 enum SubscriptionStatus {
@@ -363,10 +364,46 @@ model PollBatch {
   windowEnd      Int
   days           String[] // e.g. ["Monday", ...]; empty = every day
   error          String?
+
+  // --- Where this batch's numbers came from ----------------------
+  // Set when the batch was drawn from the random-digit-dial sampling frame
+  // rather than pasted in. Null means an uploaded list, whose selection
+  // probabilities are unknown — which is the distinction the whole frame
+  // exists to make, so it is recorded on the batch and not inferred.
+  // See docs/rdd-sampling-frame.md.
+  rddSampleId    String?
+  // The draw as the frame reported it. Kept so a published margin of error
+  // can be defended afterwards: the seed reproduces the draw, and the
+  // assignment rate is the figure the oversample was computed against at the
+  // time, which moves as the frame learns.
+  rddSeed        String?
+  rddTargetLive  Int? // live respondents asked for
+  rddTargetSize  Int? // numbers the frame intended to hand over
+  rddActualSize  Int? // numbers it could hand over
+  rddCandidatePool Int?
+  rddShortfall   Int?
+  rddAssignmentRate Float?
+  // Batch-level counts per mobile operator, e.g. {"Flow": 412, "Digicel": 388}.
+  // An aggregate and nothing else: no row, no number, no link to a call.
+  // Here because a draw claimed to be uniform across the four operators
+  // should be checkable after the fact.
+  rddOperatorMix Json?
+
+  // --- Frame hygiene write-back ----------------------------------
+  // When outcomes were last reported back to the frame, and how many numbers
+  // each of the two permitted values covered. Counts only: which number got
+  // which value is not recorded here, because a stored list of plaintext
+  // numbers is the join this design exists to prevent. See the write-back
+  // contract in lib/polling/rdd.ts.
+  rddReportedAt  DateTime?
+  rddReportedUnassigned Int @default(0)
+  rddReportedLive Int @default(0)
+
   calls          PollCall[]
   createdAt      DateTime        @default(now())
 
   @@index([pollId, createdAt])
+  @@index([rddSampleId])
 }
 
 enum PollBatchStatus {
@@ -467,4 +504,46 @@ model FeedTarget {
 
   @@unique([tenantId, target])
   @@index([tenantId, revokedAt])
+}
+
+// --- The random-digit-dial sampling frame ----------------------------
+// Credentials for the external Cayman RDD worker, which holds the plaintext
+// numbers. Shaped like FeedTarget on purpose — same sealing, same fingerprint,
+// same reasoning in lib/polling/secret-box.ts — so a reader who understands
+// one understands the other.
+//
+// One row per tenant, not one per poll: this is a frame for a population, and
+// every poll of that population draws from the same one. The environment
+// variables RDD_BASE_URL and RDD_API_TOKEN remain the fallback, exactly as
+// RETELL_API_KEY is the pattern for Retell. This row exists so the token can
+// be rotated from the admin pages without a wrangler invocation, which is the
+// same need FeedTarget was built for.
+
+model RddSource {
+  id       String @id @default(cuid())
+  tenantId String @unique
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// What an operator calls it, e.g. "Cayman mobile RDD".
+  label   String
+  baseUrl String
+
+  // AES-GCM ciphertext, `v1.<iv>.<ct>`; see lib/polling/secret-box.ts. The key
+  // is derived from PHONE_HASH_SECRET and is not in this database.
+  tokenSealed      String @db.Text
+  // First eight hex of the token's SHA-256, so an operator can confirm which
+  // key is installed without it being readable here.
+  tokenFingerprint String
+
+  // The single value reported for a number that turned out to exist. One
+  // value, constrained to an allowlist in lib/polling/rdd.ts — a free-text
+  // disposition is how the write-back contract would get widened without
+  // anyone editing the file that states it.
+  liveDisposition String @default("live")
+
+  // Set rather than deleted, so a frame that was switched off stays visible
+  // beside the batches it drew.
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }

@@ -10,6 +10,7 @@ import {
   DoNotCallError,
   placePollCall,
   reconcilePollCalls,
+  type BatchOptions,
 } from "@/lib/polling/calls";
 import { TARGET_PRESETS } from "@/lib/polling/census";
 import { findTemplate } from "@/lib/polling/templates";
@@ -17,9 +18,11 @@ import { normalizePhone, tryNormalizePhone } from "@/lib/polling/phone";
 import { extractNumbers } from "@/lib/polling/numbers";
 import { parseCategories, readWeightingConfig, type WeightTarget } from "@/lib/polling/weighting";
 import { deliverPoll, redeliverRefused, replayDelivery } from "@/lib/polling/feed";
+import { drawSampleForPoll, reportFrameOutcomes } from "@/lib/polling/rdd-frame";
 import {
   MAX_BATCH_NUMBERS,
   MAX_CALLS_PER_SUBMIT,
+  MAX_TARGET_LIVE,
   POLL_VARIABLES,
   WEEKDAYS,
 } from "@/lib/polling/results";
@@ -197,6 +200,45 @@ function parseTime(value: string): number | null {
   return minutes <= 1440 ? minutes : null;
 }
 
+/**
+ * The calling window, days and start time, shared by the pasted-list batch and
+ * the sampling-frame draw.
+ *
+ * Extracted rather than copied: the two forms queue through the same
+ * `createPollBatch`, and a draw that quietly used different calling hours from
+ * an upload would be a difference nobody could see on the page.
+ */
+function readBatchOptions(
+  formData: FormData,
+  defaultName: string,
+): { opts: BatchOptions } | { error: string } {
+  const windowStart = parseTime(field(formData, "windowStart"));
+  const windowEnd = parseTime(field(formData, "windowEnd"));
+  if (windowStart === null || windowEnd === null || windowStart >= windowEnd) {
+    return { error: "Calling hours must start before they end." };
+  }
+  const days = formData.getAll("days").map(String).filter((d) => (WEEKDAYS as readonly string[]).includes(d));
+  if (days.length === 0) return { error: "Pick at least one calling day." };
+
+  // datetime-local has no zone; it is entered in Cayman time (UTC-5, no DST).
+  const startsAtRaw = field(formData, "startsAt");
+  const startsAt = startsAtRaw ? new Date(`${startsAtRaw}:00-05:00`) : undefined;
+  if (startsAt && Number.isNaN(startsAt.getTime())) return { error: "Invalid start time." };
+
+  const reserved = Number(field(formData, "reservedConcurrency"));
+  return {
+    opts: {
+      name: field(formData, "name") || defaultName,
+      windowStart,
+      windowEnd,
+      days: days.length === WEEKDAYS.length ? [] : days,
+      startsAt,
+      skipAlreadyCalled: formData.get("skipAlreadyCalled") === "on",
+      reservedConcurrency: Number.isInteger(reserved) && reserved > 0 ? reserved : undefined,
+    },
+  };
+}
+
 export async function createBatch(formData: FormData): Promise<void> {
   const poll = await requirePoll(field(formData, "pollId"));
   const back = (params: Record<string, string>) =>
@@ -211,31 +253,12 @@ export async function createBatch(formData: FormData): Promise<void> {
     back({ error: `${numbers.length.toLocaleString()} numbers found; the limit is ${MAX_BATCH_NUMBERS.toLocaleString()} per batch. Split the list.` });
   }
 
-  const windowStart = parseTime(field(formData, "windowStart"));
-  const windowEnd = parseTime(field(formData, "windowEnd"));
-  if (windowStart === null || windowEnd === null || windowStart >= windowEnd) {
-    back({ error: "Calling hours must start before they end." });
-  }
-  const days = formData.getAll("days").map(String).filter((d) => (WEEKDAYS as readonly string[]).includes(d));
-  if (days.length === 0) back({ error: "Pick at least one calling day." });
+  const parsed = readBatchOptions(formData, `Batch ${new Date().toISOString().slice(0, 10)}`);
+  if ("error" in parsed) back({ error: parsed.error });
 
-  // datetime-local has no zone; it is entered in Cayman time (UTC-5, no DST).
-  const startsAtRaw = field(formData, "startsAt");
-  const startsAt = startsAtRaw ? new Date(`${startsAtRaw}:00-05:00`) : undefined;
-  if (startsAt && Number.isNaN(startsAt.getTime())) back({ error: "Invalid start time." });
-
-  const reserved = Number(field(formData, "reservedConcurrency"));
   let result;
   try {
-    result = await createPollBatch(poll.id, numbers, {
-      name: field(formData, "name") || `Batch ${new Date().toISOString().slice(0, 10)}`,
-      windowStart: windowStart!,
-      windowEnd: windowEnd!,
-      days: days.length === WEEKDAYS.length ? [] : days,
-      startsAt,
-      skipAlreadyCalled: formData.get("skipAlreadyCalled") === "on",
-      reservedConcurrency: Number.isInteger(reserved) && reserved > 0 ? reserved : undefined,
-    });
+    result = await createPollBatch(poll.id, numbers, (parsed as { opts: BatchOptions }).opts);
   } catch (err) {
     back({ error: err instanceof Error ? err.message.slice(0, 300) : String(err) });
   }
@@ -249,6 +272,93 @@ export async function createBatch(formData: FormData): Promise<void> {
     ...(result!.error ? { error: result!.error } : {}),
     batch: String(Date.now()),
   });
+}
+
+// --- The random-digit-dial sampling frame ------------------------
+
+/**
+ * Draw a probability sample from the Cayman RDD frame and queue it for dialling.
+ *
+ * This is the difference between a poll and a straw poll. Polimeter already
+ * computes cooperation rate, effective n, design effect and margin of error
+ * (`lib/polling/weighting.ts`, `lib/polling/results.ts`), and every one of
+ * those is only strictly defined over a sample with known selection
+ * probabilities. A list somebody uploaded has none, so those figures were
+ * being computed over a frame that could not support them. A draw from the
+ * frame can. See `docs/rdd-sampling-frame.md`.
+ *
+ * The target is a number of *live respondents*. The frame oversamples it
+ * against its own measured assignment rate, because roughly seven in ten
+ * numbers in any Cayman RDD draw are unassigned and die on the first ring —
+ * expected, not a fault, and not something a paid lookup can screen out
+ * beforehand.
+ */
+export async function drawRddSample(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const back = (params: Record<string, string>) =>
+    redirect(`/admin/polls/${poll.id}?${new URLSearchParams({ tab: "calls", ...params })}`);
+
+  const targetLive = Number(field(formData, "targetLive"));
+  if (!Number.isInteger(targetLive) || targetLive < 1 || targetLive > MAX_TARGET_LIVE) {
+    back({ error: `Ask for between 1 and ${MAX_TARGET_LIVE.toLocaleString()} live respondents.` });
+  }
+
+  const parsed = readBatchOptions(
+    formData,
+    `RDD sample ${new Date().toISOString().slice(0, 10)}`,
+  );
+  if ("error" in parsed) back({ error: parsed.error });
+
+  const result = await drawSampleForPoll(poll, {
+    ...(parsed as { opts: BatchOptions }).opts,
+    targetLive,
+    seed: field(formData, "seed") || undefined,
+  });
+
+  revalidatePath(`/admin/polls/${poll.id}`);
+  if (!result.ok) back({ error: result.reason ?? "The draw did not complete.", batch: String(Date.now()) });
+
+  back({
+    drawn: String(result.drawn ?? 0),
+    drawSubmitted: String(result.submitted ?? 0),
+    drawDnc: String(result.skippedDnc ?? 0),
+    drawCalled: String(result.skippedCalled ?? 0),
+    drawInvalid: String(result.skippedInvalid ?? 0),
+    drawShortfall: String(result.shortfall ?? 0),
+    ...(result.error ? { error: result.error } : {}),
+    batch: String(Date.now()),
+  });
+}
+
+/**
+ * Report back to the frame which of a batch's numbers exist, and nothing else.
+ *
+ * The payload is two values — see the write-back contract at the top of
+ * `lib/polling/rdd.ts`, which is where the reasoning lives rather than here,
+ * because that is the file somebody editing the payload has open. It is
+ * manual rather than automatic on the webhook: a number is only worth
+ * reporting once its calls have finished, and a button lets an operator see
+ * the guard's refusal rather than have it swallowed in a webhook handler.
+ */
+export async function reportFrameDispositions(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const batch = await prisma.pollBatch.findFirst({
+    where: { id: field(formData, "batchId"), pollId: poll.id },
+  });
+  if (!batch) {
+    redirect(`/admin/polls/${poll.id}?tab=calls&error=${encodeURIComponent("Batch not found.")}`);
+  }
+
+  const result = await reportFrameOutcomes(batch!);
+  revalidatePath(`/admin/polls/${poll.id}`);
+
+  const q = new URLSearchParams({ tab: "calls" });
+  if (result.reason) q.set("error", result.reason);
+  q.set("reportedDead", String(result.unassigned ?? 0));
+  q.set("reportedLive", String(result.live ?? 0));
+  q.set("reportedWaiting", String(result.undecided ?? 0));
+  q.set("reportedRemaining", String(result.remaining ?? 0));
+  redirect(`/admin/polls/${poll.id}?${q}`);
 }
 
 // --- Weighting ---------------------------------------------------
