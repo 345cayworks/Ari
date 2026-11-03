@@ -15,7 +15,15 @@
 
 import type { PollCallOutcome } from "@prisma/client";
 import type { Tally } from "@/lib/polling/results";
-import type { WeightingResult } from "@/lib/polling/weighting";
+import {
+  INDICATIVE_BASE,
+  MIN_REPORTABLE_BASE,
+  publicationBlockers,
+} from "@/lib/polling/publication";
+
+// The gate moved to lib/polling/publication.ts when results started being
+// delivered to campaigns; re-exported so existing importers are unaffected.
+export { INDICATIVE_BASE, MIN_REPORTABLE_BASE, publicationBlockers };
 
 const CATEGORICAL = [
   "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
@@ -41,10 +49,6 @@ const STATUS = {
   critical: "#d03b3b",
 } as const;
 
-/** Below this, a figure should not be published on its own. */
-export const MIN_REPORTABLE_BASE = 100;
-/** Between the two, a figure is indicative only. */
-export const INDICATIVE_BASE = 50;
 
 const POSITIVE = [
   "very satisfied", "satisfied", "strongly agree", "agree", "right direction",
@@ -322,35 +326,6 @@ export function DispositionChart({
       )}
     </div>
   );
-}
-
-/** Reasons a result should not be published. Empty means it is safe to quote. */
-export function publicationBlockers(
-  n: number,
-  weighting: WeightingResult | null
-): string[] {
-  const out: string[] = [];
-  if (n < MIN_REPORTABLE_BASE) {
-    out.push(
-      `The sample is ${n.toLocaleString()}; ${MIN_REPORTABLE_BASE} is the usual floor for publishing a headline figure.`
-    );
-  }
-  if (weighting) {
-    if (!weighting.converged) {
-      out.push("Weighting did not converge, so the weighted figures are unreliable.");
-    }
-    if (weighting.designEffect > 2) {
-      out.push(
-        `The design effect is ${weighting.designEffect.toFixed(2)}, so weighting has cut the effective sample to ${Math.round(weighting.effectiveN).toLocaleString()} — under half. Re-check the targets before quoting these numbers.`
-      );
-    }
-    if (weighting.maxWeight > 5) {
-      out.push(
-        `One respondent carries a weight of ${weighting.maxWeight.toFixed(1)}, so a single interview is moving the result. Trim the weights or collect more of that group.`
-      );
-    }
-  }
-  return out;
 }
 
 export function PublicationGate({ blockers }: { blockers: string[] }): JSX.Element | null {

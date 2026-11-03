@@ -82,25 +82,26 @@ model VerificationToken {
 // --- Ari domain --------------------------------------------------
 
 model Tenant {
-  id                 String              @id @default(cuid())
-  name               String
-  ownerEmail         String
-  subscriptionStatus SubscriptionStatus  @default(TRIAL)
-  settings           Json                @default("{}")
-  systemPromptOverride String?           @db.Text
-  users              User[]
-  messages           Message[]
-  approvals          PendingApproval[]
-  facts              Fact[]
-  apiUsage           ApiUsage[]
-  integrationEvents  IntegrationEvent[]
-  polls              Poll[]
-  pollCalls          PollCall[]
-  doNotCall          DoNotCall[]
-  pollCallbacks      PollCallback[]
-  pollBatches        PollBatch[]
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  id                   String             @id @default(cuid())
+  name                 String
+  ownerEmail           String
+  subscriptionStatus   SubscriptionStatus @default(TRIAL)
+  settings             Json               @default("{}")
+  systemPromptOverride String?            @db.Text
+  users                User[]
+  messages             Message[]
+  approvals            PendingApproval[]
+  facts                Fact[]
+  apiUsage             ApiUsage[]
+  integrationEvents    IntegrationEvent[]
+  polls                Poll[]
+  pollCalls            PollCall[]
+  doNotCall            DoNotCall[]
+  pollCallbacks        PollCallback[]
+  pollBatches          PollBatch[]
+  pollDeliveries       PollDelivery[]
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 }
 
 enum SubscriptionStatus {
@@ -133,7 +134,7 @@ model PendingApproval {
   id         String         @id @default(cuid())
   tenantId   String
   tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  kind       String         // e.g. "send_email", "send_sms", "send_whatsapp"
+  kind       String // e.g. "send_email", "send_sms", "send_whatsapp"
   payload    Json
   status     ApprovalStatus @default(PENDING)
   createdAt  DateTime       @default(now())
@@ -161,16 +162,16 @@ model Fact {
 }
 
 model ApiUsage {
-  id           String   @id @default(cuid())
-  tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  model        String
-  inputTokens  Int
-  outputTokens Int
-  cacheReadTokens  Int @default(0)
-  cacheWriteTokens Int @default(0)
-  costUsd      Float
-  createdAt    DateTime @default(now())
+  id               String   @id @default(cuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  model            String
+  inputTokens      Int
+  outputTokens     Int
+  cacheReadTokens  Int      @default(0)
+  cacheWriteTokens Int      @default(0)
+  costUsd          Float
+  createdAt        DateTime @default(now())
 
   @@index([tenantId, createdAt])
 }
@@ -185,7 +186,7 @@ model IntegrationEvent {
   id          String                 @id @default(cuid())
   tenantId    String
   tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  integration String                 // e.g. "ads_cayworks"
+  integration String // e.g. "ads_cayworks"
   payload     Json
   status      IntegrationEventStatus @default(QUEUED)
   error       String?
@@ -207,23 +208,24 @@ enum IntegrationEventStatus {
 // dial back (PollCallback).
 
 model Poll {
-  id             String         @id @default(cuid())
-  tenantId       String
-  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name           String
-  status         PollStatus     @default(DRAFT)
-  retellAgentId  String?        // overrides RETELL_AGENT_ID for this poll
-  fromNumber     String?        // overrides RETELL_FROM_NUMBER for this poll
+  id            String         @id @default(cuid())
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  status        PollStatus     @default(DRAFT)
+  retellAgentId String? // overrides RETELL_AGENT_ID for this poll
+  fromNumber    String? // overrides RETELL_FROM_NUMBER for this poll
   // Retell dynamic variables injected into the prompt on every call:
   // poll_name, poll_topic, screening_questions, survey_questions, ...
-  variables      Json           @default("{}")
+  variables     Json           @default("{}")
   // Raking targets, see lib/polling/weighting.ts (WeightingConfig).
-  weighting      Json           @default("{}")
-  calls          PollCall[]
-  callbacks      PollCallback[]
-  batches        PollBatch[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  weighting     Json           @default("{}")
+  calls         PollCall[]
+  callbacks     PollCallback[]
+  batches       PollBatch[]
+  deliveries    PollDelivery[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([tenantId, status])
   @@index([retellAgentId])
@@ -295,7 +297,7 @@ model PollResponse {
   id         String   @id @default(cuid())
   pollCallId String
   pollCall   PollCall @relation(fields: [pollCallId], references: [id], onDelete: Cascade)
-  questionId String   // e.g. "S1", "Q3", "D2"
+  questionId String // e.g. "S1", "Q3", "D2"
   answer     String   @db.Text
   verbatim   String?  @db.Text
   source     String   @default("function") // "function" (live) or "analysis" (post-call)
@@ -311,24 +313,24 @@ model DoNotCall {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   phoneHash String
   reason    String?
-  source    String   // "function" | "analysis" | "manual"
+  source    String // "function" | "analysis" | "manual"
   createdAt DateTime @default(now())
 
   @@unique([tenantId, phoneHash])
 }
 
 model PollCallback {
-  id             String             @id @default(cuid())
-  tenantId       String
-  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  pollId         String
-  poll           Poll               @relation(fields: [pollId], references: [id], onDelete: Cascade)
-  retellCallId   String             @unique
-  phoneNumber    String             // needed to dial back; delete once DONE
-  preferredTime  String             // as the respondent said it, e.g. "tomorrow after 6"
-  status         PollCallbackStatus @default(PENDING)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  id            String             @id @default(cuid())
+  tenantId      String
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pollId        String
+  poll          Poll               @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  retellCallId  String             @unique
+  phoneNumber   String // needed to dial back; delete once DONE
+  preferredTime String // as the respondent said it, e.g. "tomorrow after 6"
+  status        PollCallbackStatus @default(PENDING)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   @@index([tenantId, status])
 }
@@ -342,26 +344,26 @@ enum PollCallbackStatus {
 // A list of numbers sent to Retell batch calling. Large lists are split
 // into several Retell batches (retellBatchIds).
 model PollBatch {
-  id               String          @id @default(cuid())
-  tenantId         String
-  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  pollId           String
-  poll             Poll            @relation(fields: [pollId], references: [id], onDelete: Cascade)
-  name             String
-  status           PollBatchStatus @default(SENT)
-  retellBatchIds   String[]
-  submittedCount   Int             // numbers sent to Retell
-  skippedDnc       Int             @default(0)
-  skippedCalled    Int             @default(0) // already called for this poll
-  skippedInvalid   Int             @default(0) // unparseable or duplicate
-  startsAt         DateTime?       // null = as soon as Retell picks it up
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pollId         String
+  poll           Poll            @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  name           String
+  status         PollBatchStatus @default(SENT)
+  retellBatchIds String[]
+  submittedCount Int // numbers sent to Retell
+  skippedDnc     Int             @default(0)
+  skippedCalled  Int             @default(0) // already called for this poll
+  skippedInvalid Int             @default(0) // unparseable or duplicate
+  startsAt       DateTime? // null = as soon as Retell picks it up
   // Calling window in Cayman local time, minutes since midnight.
-  windowStart      Int
-  windowEnd        Int
-  days             String[]        // e.g. ["Monday", ...]; empty = every day
-  error            String?
-  calls            PollCall[]
-  createdAt        DateTime        @default(now())
+  windowStart    Int
+  windowEnd      Int
+  days           String[] // e.g. ["Monday", ...]; empty = every day
+  error          String?
+  calls          PollCall[]
+  createdAt      DateTime        @default(now())
 
   @@index([pollId, createdAt])
 }
@@ -370,4 +372,59 @@ enum PollBatchStatus {
   SENT
   PARTIAL // some chunks failed to send, see error
   FAILED
+}
+
+// --- Delivering results to a campaign ----------------------------
+// See docs/poll-results-api.md. One direction, aggregates only: a row
+// here is a push to Politracker, never a pull, and nothing
+// respondent-level is permitted into `payload`.
+
+model PollDelivery {
+  id       String @id // also the delivery_id sent; generated before the row
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pollId   String
+  poll     Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  // Which campaign's feed this belongs to. The receiving end derives the
+  // campaign from the bearer key and takes no campaign field, so this is
+  // ours alone — it scopes the sequence, nothing more.
+  target String @default("default")
+
+  // Per-target, strictly increasing, allocated as max+1 over rows that
+  // already exist. Deliberately not a count of anything: the row is written
+  // before the request goes out, so a delivery that fails keeps its number
+  // instead of letting the next one silently reuse it.
+  sequence Int
+
+  // Verbatim what was sent, kept so a replay re-sends the same bytes.
+  // Rebuilding from current data under an old sequence would deliver revised
+  // numbers as though they were the original — the quiet edit both ends are
+  // append-only to prevent.
+  payload Json
+
+  status     PollDeliveryStatus @default(PENDING)
+  httpStatus Int?
+  // The receiver's `detail` string on a 422, which names the offending
+  // field. Recorded because an integration whose failures all read
+  // "invalid_request" is one somebody debugs by guessing.
+  detail     String?            @db.Text
+  // Sequence numbers the receiver reported it has never seen. A cue to
+  // replay those rows, not an error about this one.
+  missing    Int[]              @default([])
+  attempts   Int                @default(0)
+  createdAt  DateTime           @default(now())
+  sentAt     DateTime?
+
+  @@unique([target, sequence])
+  @@index([tenantId, status])
+  @@index([pollId])
+}
+
+enum PollDeliveryStatus {
+  PENDING // row written, request not yet made or still in flight
+  ACCEPTED // 202
+  DUPLICATE // 200, the receiver already held this delivery_id
+  REFUSED // 4xx that will not change on retry without a fix (401/403/422)
+  FAILED // transport error or 5xx; safe to replay unchanged
 }

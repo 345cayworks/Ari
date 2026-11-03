@@ -4,6 +4,7 @@ import type { Poll, PollCallOutcome } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { loadPollResults } from "@/lib/polling/weighted";
+import { weightedToLabel } from "@/lib/polling/weighting";
 import { cn, formatRelative } from "@/lib/utils";
 import {
   compareQuestionIds,
@@ -37,6 +38,7 @@ import {
 import { Banner } from "../banner";
 import { StatusBadge } from "../status-badge";
 import { WeightingTab } from "./weighting-tab";
+import { DeliveryPanel } from "./delivery-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +97,19 @@ export default async function PollPage(props: {
         <Banner tone="error">{searchParams.error}</Banner>
       )}
 
+      {searchParams.delivered && (
+        <Banner tone="ok">
+          {searchParams.delivered === "already_stored"
+            ? `Delivery #${searchParams.sequence} was already held by the campaign; nothing was changed.`
+            : `Delivered to the campaign as #${searchParams.sequence}.`}
+          {searchParams.missing &&
+            ` The campaign reports it has never received ${searchParams.missing
+              .split(",")
+              .map((m) => `#${m}`)
+              .join(", ")} — replay those from the polls they belong to.`}
+        </Banner>
+      )}
+
       {tab === "results" && (
         <ResultsTab
           poll={poll}
@@ -148,12 +163,7 @@ async function ResultsTab({
 
   const started = calls.map((c) => c.startedAt).filter((d): d is Date => d !== null);
   const questionText = parseQuestionText(poll.variables as Record<string, unknown>);
-  const weightedTo = weighting
-    ? `Raked to ${config.targets
-        .filter((t) => t.categories.length >= 2)
-        .map((t) => t.label)
-        .join(" × ")}`
-    : "";
+  const weightedTo = weightedToLabel(config, weighting);
   const vars = (poll.variables ?? {}) as Record<string, string>;
   const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : "—");
   const link = (overrides: { include?: boolean; weights?: boolean }) => {
@@ -294,6 +304,8 @@ async function ResultsTab({
             .map(([id, text]) => ({ id, text })),
         }}
       />
+
+      <DeliveryPanel poll={poll} includePartial={includePartial} />
     </div>
   );
 }

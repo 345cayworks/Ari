@@ -15,6 +15,7 @@ import { TARGET_PRESETS } from "@/lib/polling/census";
 import { findTemplate } from "@/lib/polling/templates";
 import { normalizePhone, tryNormalizePhone } from "@/lib/polling/phone";
 import { parseCategories, readWeightingConfig, type WeightTarget } from "@/lib/polling/weighting";
+import { deliverPoll, replayDelivery } from "@/lib/polling/feed";
 import {
   MAX_BATCH_NUMBERS,
   MAX_CALLS_PER_SUBMIT,
@@ -356,4 +357,65 @@ export async function resolveCallback(formData: FormData): Promise<void> {
   redirect(
     `/admin/polls/${callback.pollId}?tab=calls` + (error ? `&error=${encodeURIComponent(error)}` : "")
   );
+}
+
+/**
+ * Deliver this poll's results to the campaign that commissioned it.
+ *
+ * Aggregates only, one direction; see `docs/poll-results-api.md`. The gate
+ * travels with the numbers rather than being applied here, so a poll that is
+ * not fit to publish still delivers — marked unquotable, with the reasons
+ * attached, which is the point. Withholding it entirely would leave the
+ * campaign asking for the figure by other means.
+ */
+export async function deliverResults(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const result = await deliverPoll(poll, {
+    includePartial: field(formData, "include") === "partial",
+  });
+  revalidatePath(`/admin/polls/${poll.id}`);
+
+  if (!result.ok) {
+    // Assembly problems are listed rather than summarised: each one names a
+    // field and is something an operator can act on.
+    const detail = result.problems?.length
+      ? `${result.reason} ${result.problems.join(" ")}`
+      : result.reason;
+    redirect(`/admin/polls/${poll.id}?tab=results&error=${encodeURIComponent(detail)}`);
+  }
+
+  const q = new URLSearchParams({
+    tab: "results",
+    delivered: result.status,
+    sequence: String(result.sequence),
+  });
+  if (result.missing.length > 0) q.set("missing", result.missing.join(","));
+  redirect(`/admin/polls/${poll.id}?${q}`);
+}
+
+/**
+ * Re-send a delivery that did not land, byte for byte.
+ *
+ * Not a rebuild: the stored payload goes out again under its original
+ * `delivery_id`, which the receiver treats as idempotent. Rebuilding would
+ * quietly deliver today's numbers under an old sequence, and telling a
+ * correction from a quiet edit is the thing both ends are append-only to
+ * protect.
+ */
+export async function replayResults(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const result = await replayDelivery(field(formData, "deliveryId"));
+  revalidatePath(`/admin/polls/${poll.id}`);
+
+  if (!result.ok) {
+    redirect(
+      `/admin/polls/${poll.id}?tab=results&error=${encodeURIComponent(result.reason)}`
+    );
+  }
+  const q = new URLSearchParams({
+    tab: "results",
+    delivered: result.status,
+    sequence: String(result.sequence),
+  });
+  redirect(`/admin/polls/${poll.id}?${q}`);
 }

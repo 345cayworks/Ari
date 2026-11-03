@@ -19,7 +19,8 @@
     "db:studio": "prisma studio",
     "retell:sync": "tsx --env-file-if-exists=.env.local scripts/retell-sync.ts",
     "postinstall": "prisma generate",
-    "retell:create-agent": "tsx --env-file-if-exists=.env.local scripts/retell-create-agent.ts"
+    "retell:create-agent": "tsx --env-file-if-exists=.env.local scripts/retell-create-agent.ts",
+    "check:delivery": "tsx scripts/check-delivery.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.1",

@@ -32,11 +32,19 @@ Everything below was verified against the live deployment, not just built:
 | Results charts and the publication gate | rendered and inspected in a browser; the gate fires on the test poll |
 | Question-set templates | four sets on the Setup tab, previewed on a throwaway poll |
 | Option rotation | 400-rotation test: scales only reverse, unordered options average dead centre, terminal options never move |
+| Campaign delivery, payload side | `npm run check:delivery` — 31 checks, three of them the built payload run through Politracker's own `parseDelivery` |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
 Telegram message will do it; `/start` and `/whoami` return before the model is
 called.
+
+**Also not yet exercised:** campaign delivery has never made a request.
+Migration `20261102223000_poll_delivery` is written but **not applied**, no
+`POLITRACKER_FEED_TOKEN` exists — the receiving end issues it and an invented
+one gets a flat 401 — and the `poll_feed` platform setting is absent, so the
+button is disabled and says why. The payload builder is verified against the
+receiver's real parser; the wire has not been touched.
 
 ## The three faults a real deploy exposed
 
@@ -93,9 +101,16 @@ the `NEON_*` names the cloud environment used.
    pre-rotation wave against a post-rotation one without saying so — the first
    option in each list will appear to lose a couple of points when nothing
    moved.
-5. **Delete the test poll** `TEST — Cayman Pulse (safe to delete)` when done.
+5. **Turn on campaign delivery**, in this order: apply
+   `20261102223000_poll_delivery`; ask the Politracker end to issue a feed key
+   for the campaign; put it in `POLITRACKER_FEED_TOKEN` as a Worker secret;
+   set `poll_feed` to `{ "enabled": true, "endpointUrl": "..." }`. Then
+   deliver the test poll and check the sequence, not just the 202 — a `200
+   already_stored` means the id was already held, which on a first delivery
+   would mean something is wrong.
+6. **Delete the test poll** `TEST — Cayman Pulse (safe to delete)` when done.
    The `Cayman Life` poll beside it is the user's; leave it alone.
-6. **`{{agent_name}}`** now appears in the live greeting and Role line. The
+7. **`{{agent_name}}`** now appears in the live greeting and Role line. The
    value comes from the poll's `agent_name` field, currently "Nina" — the
    Retell dashboard's own agent-name field is an internal label and is never
    read aloud.
@@ -173,6 +188,45 @@ poll's own data.
   anyway).
 - Weighting presets still come from search summaries, not primary sources. Ask
   the user to verify before publishing any weighted result.
+
+## Delivering results to a campaign
+
+The contract is `docs/poll-results-api.md`; the receiving end is built and
+applied in Politracker. This side:
+
+| File | Does |
+|---|---|
+| `lib/polling/delivery.ts` | Builds the payload. **Pure** — no `lib/db.ts`, so it runs under Node |
+| `lib/polling/feed.ts` | Config, sequence allocation, the request, the replay. Worker only |
+| `lib/polling/publication.ts` | The gate, moved out of `poll-charts.tsx` now that it travels to another system |
+| `scripts/check-delivery.ts` | `npm run check:delivery` |
+| `app/admin/polls/[id]/delivery-panel.tsx` | The button, and the log of what has gone |
+
+Three things worth knowing before changing any of it:
+
+1. **The row is written before the request goes out.** That is what makes a
+   sequence durable: a delivery that fails keeps its number and its payload,
+   so a replay re-sends the same bytes rather than rebuilding from data that
+   has moved on. Rebuilding would deliver revised numbers under an old
+   sequence, which is the quiet edit both ends are append-only to prevent.
+2. **The field names and limits are a copy of the receiver's parser**, because
+   there is no shared package between two repositories. A copy drifts. The
+   `--parser` flag on the check script is what catches it:
+
+   ```
+   esbuild <politracker>/packages/store-postgres/src/feed.ts --bundle      --platform=node --format=cjs --outfile=feed.cjs --external:pg
+   npm run check:delivery -- --parser ./feed.cjs
+   ```
+
+   Run that after any change to either end's field set. It already earned its
+   keep: it caught the builder emitting a `with_a_view` base larger than the
+   sample that answered at all.
+3. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
+   by-group split, so there is no crosstab source to deliver. The payload type
+   carries the shape and the limits already cover it, so a crosstab engine has
+   somewhere to plug in. They are optional in the contract, so nothing is
+   broken by their absence — but the receiving end would prefer them, and a
+   campaign that cannot see a district at all will ask for it by other means.
 
 ## Map of the code
 

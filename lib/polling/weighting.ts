@@ -41,6 +41,25 @@ export function readWeightingConfig(value: unknown): WeightingConfig {
 // --- Editing categories as text ----------------------------------
 
 // One category per line: "Name | target | alias, alias".
+/**
+ * How a published figure describes its own weighting, e.g.
+ * "Raked to District × Age band". Empty when nothing was weighted.
+ *
+ * Shared by the results page and the campaign delivery so the two cannot
+ * disagree about what a number was weighted to — a disclosure line and the
+ * `weighted_to` field in a delivery are the same claim.
+ */
+export function weightedToLabel(
+  config: WeightingConfig,
+  weighting: WeightingResult | null
+): string {
+  if (!weighting) return "";
+  const labels = config.targets
+    .filter((t) => t.categories.length >= 2)
+    .map((t) => t.label);
+  return labels.length > 0 ? `Raked to ${labels.join(" × ")}` : "";
+}
+
 export function formatCategories(categories: WeightCategory[]): string {
   return categories
     .map((c) => [c.name, String(c.target), c.aliases.join(", ")].filter(Boolean).join(" | "))
