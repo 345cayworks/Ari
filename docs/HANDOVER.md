@@ -386,8 +386,27 @@ present, and so are two the change should not have touched — the first grep
 looked in Next's vendored runtime files and reported all five missing, which
 is the only reason that mistake was caught. Both custom domains answer 200 and
 `POST /admin/polls/[id]/screen` returns 403 without a session, so the handler
-is live and guarded. **The signed-in flow still has not been exercised** —
-nobody has pasted a list into the form and read the panel back.
+is live and guarded.
+
+**Exercised signed in, on 2026-11-03.** Eleven synthetic numbers through the
+real form on the TEST poll, against a prediction computed beforehand rather
+than read off the result: 3 callable of 11, 2 mobile and 1 landline, one each
+of duplicate, malformed and out-of-area, 2 unallocated, 3 allocated-but-not-
+dialable, dead exchanges reported as 345-200 and 345-999. Every cell matched.
+Do-not-call and already-called both 0, which the local run could not have
+produced. The CSV downloads and carries the same verdicts per number, with
+`csvCell`'s formula defusing visible as a `'` before each `+1345…` — harmless
+for pasting back, since `tryNormalizePhone` strips non-digits.
+
+Two things the run showed:
+
+- **The pasted list does not survive the summary redirect.** Clicking "Screen
+  the list" empties the box, so taking the CSV afterwards means pasting again.
+  It cannot be preserved without putting the list in a URL or storing it, and
+  this deliberately does neither. Take the CSV first if you want both.
+- **Neither CSV carries a UTF-8 BOM**, this one or the older call export, so
+  Excel on Windows reads them in the ANSI codepage and an em dash in a poll
+  name arrives as mojibake. Cosmetic, unfixed, and it affects both files.
 
 **Two limits worth knowing.** Cayman has number portability (345-767 is
 reserved for it) and a ported number keeps its original exchange, so the
@@ -1014,6 +1033,14 @@ than merely allowed.
 ## Gotchas
 
 Deployment and tooling, all learned the hard way this session:
+
+- **The admin only works on `polling.cayworks.net`.** `NEXTAUTH_URL` still
+  points there, so the session cookie is scoped to that host and
+  `polimeter.cayworks.net/admin` is an endless login loop — sign in, get
+  returned to the login form, with nothing on the page explaining why. The
+  Polimeter host serves the public site correctly; it is only the admin that
+  cannot hold a session. This is the far end of the canonical-host switch that
+  was deliberately deferred, and it bit during the first signed-in walkthrough.
 
 - **Adding a `routes` entry to `wrangler.jsonc` turns `workers_dev` off by
   default.** This 404'd the app and both webhooks mid-session. `workers_dev:
