@@ -123,6 +123,8 @@ Content-Type: application/json
 | `401` | `{ error: "unauthorized" }` | Unknown key. Deliberately undifferentiated, so the endpoint cannot be used to discover which keys exist. |
 | `403` | `{ error: "campaign_suspended" }` | Key is valid, campaign is switched off. Told apart from `401` precisely so a pollster pushing into a dead campaign learns the numbers are not landing. |
 | `422` | `{ error: "invalid_request", detail }` | `detail` names the offending field. |
+| `409` | `{ error: "sequence_taken", sequence, held_by, detail }` | This sequence is already held by a **different** delivery. `held_by` is the provider's own `delivery_id` for the one holding it. |
+| `500` | — | A fault at the receiver. Not something the provider can fix. |
 
 **Record `detail` against the failed delivery.** An integration whose failures
 all read `invalid_request` is one somebody debugs by guessing.
@@ -331,13 +333,44 @@ The distinction the provider has to keep is between *refused* and *failed*:
 | Outcome | Did it store anything? | Repair |
 | --- | --- | --- |
 | `401`, `403`, `422` | No, provably | Rebuild and re-send under the **same** sequence |
+| `409` | Yes — under this sequence, by another delivery | Nothing to this row. Deliver again as a revision under a **new** sequence |
 | Transport error, `5xx` | Unknown | Re-send the **stored bytes**; never rebuild |
+
+A `409` has exactly one cause: a delivery the provider recorded as refused
+actually landed. It is the receiver reporting that the provider's record is
+wrong, and `held_by` names the delivery holding the number so the record can be
+put right without reading anybody's logs. Treating it as a transport failure
+would be the damaging misreading — that offers "send it again unchanged", into
+a number that is permanently accounted for.
+
+The division of labour in the codes is worth stating: **a `409` is the
+provider's to fix and a `500` is the receiver's.** Before the receiver added
+the `409`, a taken sequence surfaced as `500 internal_error`, which is loud but
+aimed at the wrong system — the provider would go looking for a bug at the
+receiver when the fact worth acting on is that its own earlier delivery
+landed.
 
 Rebuilding after a transport failure is the one move that can silently publish
 numbers nobody chose: if the original did land, the same `delivery_id` comes
 back `200 already_stored`, the receiver keeps its copy, and the provider
 records a success for figures that were discarded. Re-sending the stored bytes
 is safe either way, which is why that is the only repair offered there.
+
+### A 2xx is not always good news
+
+Idempotency means the same `delivery_id` arriving again answers `200`, and on a
+replay that is exactly what the provider wants: the original landed and only
+the answer was lost. On a **first send or a corrected re-send**, the same `200`
+means the receiver already held that id and kept its own copy — so the payload
+just sent was *not* stored, and recording it as delivered would leave the
+provider believing figures were published that were not.
+
+This is the only place in the contract where a success code is a problem, and
+the provider must tell the two apart by whether it expected the delivery to be
+new. The two conflict codes then compose: a first send answering `200` means a
+`delivery_id` collision, and a corrected re-send answering `409` means the
+record of a refusal was wrong. Different faults, each distinguishable from a
+success without reading a log.
 
 ### A lost delivery leaves a permanent gap
 

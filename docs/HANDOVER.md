@@ -285,7 +285,14 @@ Three things worth knowing before changing any of it:
    there could come back `200 already_stored`, which would mean the far end
    kept its copy and these numbers were dropped. `send` treats that 200 as a
    failure rather than a success for exactly that reason.
-4. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
+4. **A 409 is ours to fix; a 500 is theirs.** A 409 means the far end already
+   holds that sequence under a different delivery, which has one cause: a
+   delivery recorded here as refused actually landed. `held_by` names it, and
+   `send` corrects that row to ACCEPTED rather than leaving a landed delivery
+   marked refused — which is how a gap gets reported that was never a gap. It
+   is recorded as DUPLICATE, not FAILED, because a FAILED row offers "send it
+   again unchanged" and that would re-send into a permanently spent number.
+5. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type
    carries the shape and the limits already cover it, so a crosstab engine has
    somewhere to plug in. They are optional in the contract, so nothing is

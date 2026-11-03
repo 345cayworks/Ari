@@ -157,15 +157,23 @@ export async function redeliverRefused(
   // The same wave, because this is a retry of it rather than a new one.
   const wave = stored?.poll?.wave ?? 1;
 
-  // A fresh delivery_id, deliberately, even though the contract allows reusing
-  // it. If this row's REFUSED status were ever wrong and the far end did hold
-  // the original, a reused id would come back 200 already_stored — it would
-  // keep its copy and silently drop these numbers while this side recorded a
-  // success. A new id under a taken sequence hits its unique constraint and
-  // fails loudly instead. Of the two ways to be wrong, prefer the noisy one.
-  const deliveryId = crypto.randomUUID();
+  // The same delivery_id, which is this row's own primary key.
+  //
+  // A fresh one was the first instinct — if this row's REFUSED were wrong and
+  // the far end did hold the original, a reused id comes back 200
+  // already_stored, which looks like success. But the row's id *is* the
+  // delivery id here, so a fresh one leaves the stored payload disagreeing
+  // with the row it sits on, which is exactly the state replayDelivery
+  // refuses to send. It would have broken the replay path to harden the
+  // re-send path.
+  //
+  // It is also unnecessary, because the unexpected-200 guard in `send` already
+  // catches that case and catches it loudly: on a corrected re-send a 200
+  // means the far end kept its copy and these numbers were dropped, and it is
+  // recorded as a failure rather than a delivery. The invariant is worth more
+  // than the second mechanism.
   const built = await assemble(row.poll, {
-    deliveryId,
+    deliveryId: id,
     sequence: row.sequence,
     wave,
     includePartial: options.includePartial ?? false,
@@ -392,6 +400,7 @@ async function send(
     status?: string;
     detail?: string;
     error?: string;
+    held_by?: string;
     missing_sequences?: number[];
   };
   const missing = Array.isArray(body.missing_sequences) ? body.missing_sequences : [];
@@ -425,6 +434,40 @@ async function send(
     };
   }
 
+  // 409 means the far end already holds this sequence under a different
+  // delivery. There is exactly one way that happens: a delivery this side
+  // recorded as refused actually landed. So the number is spent, this attempt
+  // can never be delivered under it, and the repair is a revision under a new
+  // sequence rather than anything done to this row.
+  //
+  // It is deliberately not FAILED. A FAILED row offers "send it again
+  // unchanged", which here would re-send into a number that is already
+  // accounted for, for ever. `held_by` names the delivery holding it — this
+  // side's own id, so the record can be put right without reading anybody's
+  // logs.
+  if (res.status === 409) {
+    const heldBy = typeof body.held_by === "string" ? body.held_by : null;
+    const detail =
+      `Sequence #${payload.sequence} is already held at the far end` +
+      (heldBy === null ? "" : ` by delivery ${heldBy}`) +
+      `. This delivery was recorded as refused, but it landed. Deliver again to send revised numbers under a new sequence.`;
+
+    // Put the record straight. The far end is authoritative about what it
+    // holds, and leaving a landed delivery marked refused is how a gap gets
+    // reported that was never a gap.
+    if (heldBy !== null && heldBy !== id) {
+      await prisma.pollDelivery
+        .update({
+          where: { id: heldBy },
+          data: { status: "ACCEPTED", httpStatus: 202, sentAt: new Date(), detail: null },
+        })
+        .catch(() => undefined);
+    }
+
+    await record({ status: "DUPLICATE", httpStatus: 409, detail, missing });
+    return { ok: false, id, reason: detail };
+  }
+
   // 401, 403 and 422 will not come good on a retry without something
   // changing at one end or the other, so they are told apart from a
   // transport failure that is safe to replay unchanged.
@@ -442,6 +485,8 @@ async function send(
 
 function explain(status: number, detail: string): string {
   switch (status) {
+    case 500:
+      return `The receiving end reported a fault of its own, so this is not something to fix here: ${detail}`;
     case 401:
       return "The feed token was not recognised. It has been rotated or revoked at the other end.";
     case 403:

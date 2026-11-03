@@ -13,6 +13,13 @@ import { deliverResults, fixAndResendResults, replayResults } from "../actions";
  * `docs/poll-results-api.md` for why that distinction is load-bearing.
  */
 
+// DUPLICATE covers two outcomes that mean the same thing for this row — the
+// far end already has this accounted for and there is nothing to do to it. A
+// 200 is the delivery id already held; a 409 is the sequence held by another
+// delivery, which means a row recorded as refused actually landed. They are
+// told apart by `httpStatus` and spelled out in `detail`, rather than by a
+// fourth enum value, because adding one would mean another production DDL for
+// a distinction the row already carries.
 const TONE: Record<PollDeliveryStatus, { label: string; color: string }> = {
   PENDING: { label: "In flight", color: "#8a6d1f" },
   ACCEPTED: { label: "Delivered", color: "#1f6d4a" },
