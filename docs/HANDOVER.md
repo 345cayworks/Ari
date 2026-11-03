@@ -165,20 +165,19 @@ the `NEON_*` names the cloud environment used.
    pre-rotation wave against a post-rotation one without saying so — the first
    option in each list will appear to lose a couple of points when nothing
    moved.
-5. **Turn on campaign delivery, in this order — the order is the safety.**
+5. **Make the first delivery. Only the credential is still missing.**
 
-   `poll_feed` exists with the right endpoint
-   (`https://politracker.cayworks.net/v1/poll-results`, checked against their
-   wrangler routes rather than assumed; their README names two custom domains
-   and the other is the API's older one) but is **`enabled: false`**, on
-   purpose. The deployed Worker predates the test-delivery marking, so its
-   panel offers only the unmarked "Deliver these results". Enabling the feed
-   and installing a token against that build would make an unmarked permanent
-   delivery the only available action. Off is the gate that does not depend on
-   anybody remembering the ordering.
+   Done already: migration applied, Worker deployed at `5ad0790d` with the
+   test marking confirmed present in the bundle, and `poll_feed` set to
+   `{ enabled: true, endpointUrl: "https://politracker.cayworks.net/v1/poll-results" }`
+   — that hostname checked against their wrangler routes rather than assumed,
+   since their README names two custom domains and the other is the API's
+   older one.
 
-   So: **deploy first**, then flip `poll_feed.enabled` to true, then install
-   the credential:
+   The ordering mattered and is now spent: the feed was deliberately held at
+   `enabled: false` while the deployed Worker predated the marking, because
+   enabling it then would have made an unmarked permanent delivery the only
+   available action. Both halves are current now, so what remains is one step:
 
    ```
    npx wrangler secret put POLITRACKER_FEED_TOKEN
@@ -186,8 +185,18 @@ the `NEON_*` names the cloud environment used.
 
    Run that yourself and paste the key at the prompt. It is deliberately not
    installed by Claude and was never asked for in chat: the key is a
-   credential for another platform, and the fewer contexts it has been in, the
-   better. Redeploy is not needed — a secret takes effect on its own.
+   credential for another platform, and the fewer contexts it has been in the
+   better. It travels from their operator to ours directly, through neither
+   agent. No redeploy — a secret takes effect on its own.
+
+   **The baseline, read from their database before anything was sent**, so the
+   interpretation is written down rather than reasoned about afterwards:
+
+   - `last_used_at` on that key is **null**. If it is set after the first
+     delivery, that was us. If it was *already* set before we sent anything,
+     somebody else has used the key and both sides should stop.
+   - `STERLING` holds **zero deliveries** and **sequence 1 is free**, so the
+     allocator will take 1 and will not collide.
 
    Then **use "Deliver as a test"** on the poll's Results tab for the first
    one. There is no staging campaign at the receiving end and **no delete
