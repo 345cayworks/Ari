@@ -448,30 +448,21 @@ async function send(
   if (res.status === 409) {
     const heldBy = typeof body.held_by === "string" ? body.held_by : null;
 
-    // The far end naming *this* delivery as the holder is not a conflict at
-    // all: it is saying the sequence is taken by the request being answered,
-    // which means this delivery is stored. Recording it as anything other
-    // than delivered would leave a landed delivery looking unlanded, and that
-    // is the state that gets reported as a gap.
+    // `held_by` naming *this* delivery is deliberately not handled, and the
+    // reason is worth keeping because the obvious instinct is to guard it.
     //
-    // It arises from a concurrent duplicate — a retry fired while the
-    // original was still in flight — against a receiver that resolves the
-    // sequence before the delivery id. Theirs no longer does; the build
-    // currently deployed still does, so this is reachable today rather than
-    // hypothetical. Either way the truthful reading does not depend on which
-    // of us is at fault.
-    if (heldBy !== null && heldBy === id) {
-      const detail = `The far end reports sequence #${payload.sequence} is held by this delivery, so it is stored. Its answer arrived as a conflict rather than an acceptance, which an older build does on a concurrent duplicate.`;
-      await record({
-        status: "ACCEPTED",
-        httpStatus: 409,
-        sentAt: new Date(),
-        detail,
-        missing,
-      });
-      return { ok: true, status: "already_stored", id, sequence: payload.sequence, missing };
-    }
-
+    // It would mean the receiver resolved the sequence before the delivery id,
+    // which exactly one of its builds did — introduced and fixed between two
+    // commits that ship in the same deploy, so the response has never left
+    // that platform and will not. Its deployed build has no conflict handling
+    // at all and answers a unique violation with a 500; its next one resolves
+    // the id first and answers 200. Neither can produce a self-naming 409.
+    //
+    // A guard for it would be the mistake this file has already made once: a
+    // second mechanism for a hazard the first one covers, except here the
+    // hazard does not exist. Dead defensive code is not free — it reads as
+    // evidence that the thing it guards against happens, and the next person
+    // takes a wrong model of that endpoint from it.
     const detail =
       `Sequence #${payload.sequence} is already held at the far end` +
       (heldBy === null ? "" : ` by delivery ${heldBy}`) +
@@ -479,8 +470,10 @@ async function send(
 
     // Put the record straight. The far end is authoritative about what it
     // holds, and leaving a landed delivery marked refused is how a gap gets
-    // reported that was never a gap.
-    if (heldBy !== null) {
+    // reported that was never a gap. The `!== id` test is not a guard against
+    // the self-naming case above — it is there so this update and the `record`
+    // below cannot both write the same row, the second overwriting the first.
+    if (heldBy !== null && heldBy !== id) {
       await prisma.pollDelivery
         .update({
           where: { id: heldBy },

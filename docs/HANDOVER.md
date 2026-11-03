@@ -294,18 +294,17 @@ Three things worth knowing before changing any of it:
    again unchanged" and that would re-send into a permanently spent number.
 
    **This handling targets their committed code, not their running code.**
-   Their deployed Worker differs in three ways, all unreachable without a
-   token, and two of them are on the conflict path — so it is least
-   trustworthy in exactly the situation where you would be reconciling:
+   Their deployed build has no conflict handling on the feed path at all —
+   verified by grepping it, not by asking — so it answers a unique violation
+   with `500 internal_error`. That falls through to FAILED here and offers
+   exactly the wrong repair. The running build differs in two ways, both
+   unreachable without a token: no `last_used_at`, and that 500 where a 409
+   belongs.
 
-   - it never writes `last_used_at`;
-   - it answers a taken sequence with `500 internal_error`, which falls
-     through to FAILED here and so offers exactly the wrong repair;
-   - on a concurrent duplicate — a retry fired while the original is still in
-     flight — it resolves the sequence before the delivery id, so it answers
-     409 naming *this* delivery as the holder. `send` reads that as what it
-     is (the delivery is stored, recorded ACCEPTED) rather than as a
-     conflict, which is why that case is handled here and not merely noted.
+   A self-naming 409 — `held_by` pointing at the delivery being answered — is
+   **not** reachable from any of their builds, and `send` deliberately does
+   not handle it. See the comment there; the short version is that the one
+   build which could emit it ships its own fix in the same deploy.
 
    This is the reason the two redeploys are ordered before any delivery
    rather than merely advisable, and the reason not to read a 500 from them
@@ -321,9 +320,9 @@ Three things worth knowing before changing any of it:
 
 Worth recording because the obvious economy, once this is working, is for each
 side to stop reading the other's code — and that is where the next one gets
-through. Nine corrections crossed between the two platforms while it was being
-built, five on this side. Not one was caught by a test here or by reading the
-other side's summary of its own work.
+through. Corrections crossed in both directions throughout, roughly evenly
+split. Not one was caught by a test on this side or by reading the other
+side's summary of its own work.
 
 What did catch them, with an example each:
 
@@ -343,7 +342,14 @@ What did catch them, with an example each:
   same commit. Neither typecheck nor any test could see it, because both
   halves were internally consistent.
 
-Two patterns worth carrying forward. **Redundant defences are not free** — the
+And one that caught both sides late: **risk gets overstated in the direction
+that feels responsible.** They reported a bug as live when it was committed
+and already fixed in the same undeployed batch; this side believed it, built a
+branch for a response that cannot arrive, and wrote "the only build I could
+actually meet" into a commit message to justify it. Dead defensive code is not
+free — it reads as evidence that the thing it guards against happens.
+
+Two more worth carrying forward. **Redundant defences are not free** — the
 fresh id and their crude minimum-sample check were both extra protection for
 something already handled properly, and both introduced a fault the thing they
 duplicated did not have. And **a right conclusion resting on a wrong reason is
