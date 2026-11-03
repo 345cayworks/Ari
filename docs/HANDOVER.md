@@ -265,14 +265,33 @@ applied in Politracker. This side:
 | `scripts/check-delivery.ts` | `npm run check:delivery` |
 | `app/admin/polls/[id]/delivery-panel.tsx` | The button, and the log of what has gone |
 
-Three things worth knowing before changing any of it:
+Worth knowing before changing any of it — and deliberately not counted,
+because every count written above a list in this document has gone stale
+against it:
 
-1. **The row is written before the request goes out.** That is what makes a
+1. **The sequence assumes this platform is the only writer to that campaign's
+   feed.** `allocate` takes `max + 1` over rows *here*, so it is really
+   tracking what this side has sent, not what the far end holds. If anything
+   else ever delivers into the same campaign, the two desynchronise and the
+   first symptom is a 409. There is no way to discover their current maximum:
+   the POST response does not carry it, and their listing endpoint needs one
+   of their sessions, not our key. So this is a structural assumption rather
+   than a tolerance, and the 409 branch is what makes the violation
+   diagnosable instead of silent.
+
+   It nearly happened. Their session was authorised to inject a test delivery
+   of its own to close its read-path gap, realised it would take sequence 1,
+   and stopped — our empty table would have allocated 1 too. Our 409 handling
+   would have reported it correctly, but the first real delivery would have
+   opened with a failure and the permanent row would have carried their
+   wording instead of our test marking.
+
+2. **The row is written before the request goes out.** That is what makes a
    sequence durable: a delivery that fails keeps its number and its payload,
    so a replay re-sends the same bytes rather than rebuilding from data that
    has moved on. Rebuilding would deliver revised numbers under an old
    sequence, which is the quiet edit both ends are append-only to prevent.
-2. **The field names and limits are a copy of the receiver's parser**, because
+3. **The field names and limits are a copy of the receiver's parser**, because
    there is no shared package between two repositories. A copy drifts. The
    `--parser` flag on the check script is what catches it:
 
@@ -303,7 +322,7 @@ Three things worth knowing before changing any of it:
    exits 0 either way — the builder's own checks really did pass, and there is
    no CI here to mislead. If this is ever wired into CI, pass `--parser` or the
    contract goes unverified behind a green build.
-3. **A test delivery is marked in the payload, not merely intended.**
+4. **A test delivery is marked in the payload, not merely intended.**
    `TEST_DELIVERY_BLOCKER` is prepended to the gate's blockers, which forces
    the delivery unquotable and carries a fixed sentence saying it is a trial
    and not a measurement of opinion. The sample-size blocker alone was not
@@ -321,7 +340,7 @@ Three things worth knowing before changing any of it:
    goes through `feed.ts` and needs a database. The flag's wiring is verified
    only by the first delivery actually being marked. Look at the row.
 
-4. **A refusal consumes no sequence; a failure might have.** A sequence is
+5. **A refusal consumes no sequence; a failure might have.** A sequence is
    spent if and only if the far end answered 2xx — a 401 or 403 returns before
    the payload is read and a 422 before it is stored. So a `REFUSED` row is
    rebuilt and re-sent under the number it already holds, leaving no gap, and
@@ -330,7 +349,7 @@ Three things worth knowing before changing any of it:
    there could come back `200 already_stored`, which would mean the far end
    kept its copy and these numbers were dropped. `send` treats that 200 as a
    failure rather than a success for exactly that reason.
-5. **A 409 is ours to fix; a 500 is theirs.** A 409 means the far end already
+6. **A 409 is ours to fix; a 500 is theirs.** A 409 means the far end already
    holds that sequence under a different delivery, which has one cause: a
    delivery recorded here as refused actually landed. `held_by` names it, and
    `send` corrects that row to ACCEPTED rather than leaving a landed delivery
@@ -349,12 +368,34 @@ Three things worth knowing before changing any of it:
    diagnosable rather than impossible — the conflict path has never run with
    a credential at either end.
 
-6. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
+7. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type
    carries the shape and the limits already cover it, so a crosstab engine has
    somewhere to plug in. They are optional in the contract, so nothing is
    broken by their absence — but the receiving end would prefer them, and a
    campaign that cannot see a district at all will ask for it by other means.
+
+### A commit message is immutable, so keep out-of-tree claims out of it
+
+Audited every commit on this branch against the files it actually contains,
+after noticing that a failed heredoc edit followed by `git add && git commit`
+on the next line commits anyway. No message describes in-tree work missing
+from its commit — but that held by luck of mechanism, not design: a failed
+edit stages nothing, so the commit fails visibly. With anything else already
+staged, which is routine, it would have shipped a message describing work that
+is not there, and that is unfalsifiable from the log afterwards.
+
+The rule, since the mechanism is not the protection: **chain the edit to the
+commit, or put them in separate calls so a failure stops the turn.** A
+traceback sitting above a successful commit line in long Bash output reads as
+success, which is how it survives.
+
+The audit did find a milder instance of the same family. Two commit messages
+assert state that git cannot carry — `poll_feed`'s value — and one of them
+(`156e754`, "poll_feed is now set") was reversed by `6d63fcd` within the hour.
+A commit message cannot be corrected, only contradicted by a later one, so
+that claim is permanently wrong in the history. Out-of-tree state belongs
+here, where it can be updated, not in a message that freezes it.
 
 ### How the faults in this integration were actually found
 
