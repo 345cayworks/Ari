@@ -36,7 +36,7 @@ Everything below was verified against the live deployment, not just built:
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
-| Worker carrying the sender | deployed, version `4c964713-39bb-4c9f-941a-3b55f173d5a9`, 2.07 MB gzipped, on **two** custom domains: `polimeter.cayworks.net` (new) and `polling.cayworks.net` (kept — the Retell and Telegram webhooks are registered against it). Both answer 200. Confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt and the number screener |
+| Worker carrying the sender | deployed, version `d37c7c9c-b7f2-458e-80f2-f83bcf572b7d`, 2.07 MB gzipped, on **two** custom domains: `polimeter.cayworks.net` (new) and `polling.cayworks.net` (kept — the Retell and Telegram webhooks are registered against it). Both answer 200. Confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt and the number screener |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -404,9 +404,26 @@ Two things the run showed:
   the list" empties the box, so taking the CSV afterwards means pasting again.
   It cannot be preserved without putting the list in a URL or storing it, and
   this deliberately does neither. Take the CSV first if you want both.
-- **Neither CSV carries a UTF-8 BOM**, this one or the older call export, so
-  Excel on Windows reads them in the ANSI codepage and an em dash in a poll
-  name arrives as mojibake. Cosmetic, unfixed, and it affects both files.
+- **Neither CSV carried a UTF-8 BOM**, this one or the older call export, so
+  Excel on Windows read them in the ANSI codepage and the em dash in a poll
+  name arrived as three Latin-1 characters. Fixed: `csvBody()` in `lib/utils`
+  prepends the mark and both routes use it, shared for the same reason
+  `csvCell` is. `charset=utf-8` on the response never helped, because Excel
+  reads a saved file and the header is long gone by then. It was found by
+  downloading the file and reading its bytes — nothing in the code looked
+  wrong, which is the only way this kind of fault turns up. Verified the same
+  way after deploying: the pre-fix download starts `50 6f 6c`, both post-fix
+  downloads start `ef bb bf`.
+
+  Worth recording how nearly that verification went wrong. The post-fix
+  download was declared to have failed, because the directory was listed a
+  moment before the file finished writing — and a confident mechanism was then
+  produced to explain the non-event ("Chrome blocks repeat automatic
+  downloads"). The download had worked on the first click. Same shape as the
+  PPM mislabel below: an explanation that is true in general, reached for to
+  account for an observation that was itself wrong. A check that reports a
+  negative deserves the same suspicion as one that reports a pass, and "no
+  file yet" and "no file ever" are not the same reading.
 
 **Two limits worth knowing.** Cayman has number portability (345-767 is
 reserved for it) and a ported number keeps its original exchange, so the
