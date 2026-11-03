@@ -737,6 +737,20 @@ their end — verified against the real row through their actual renderer, not
 a fixture. That is the thing built for a case nobody intended, working in it.
 Whether the row stays is their operator's call on their own campaign.
 
+**The two fingerprints provably compute the same thing**, which the prompt
+depends on entirely — an identity check that can never succeed is worse than
+none, because a mismatch reads as the wrong key rather than the wrong formula.
+Ours is SHA-256 of the key's UTF-8 bytes, lowercase hex, zero-padded per byte,
+first eight characters. Theirs is `substring(key_sha256 from 1 for 8)` over
+the same digest. Verified by a known-answer test rather than by comparing
+descriptions: `sha256("abc")` is
+`ba7816bf8f01cfea...` and `fingerprint("abc")` is `ba7816bf`.
+
+It is also already demonstrated. Two independent implementations over the same
+key both produced `c103fff5` this morning — which additionally establishes
+that their stored digest is a plain `sha256(key)` with no salt or pepper,
+because a salted one could not have agreed.
+
 **`FeedTarget.tokenFingerprint` is the check and it was built for exactly
 this.** Its own comment says it is "enough to compare against what the other
 end reports for the key it issued, which is the only question an operator
