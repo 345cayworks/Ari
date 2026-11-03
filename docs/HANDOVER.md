@@ -292,6 +292,22 @@ against it:
    than a tolerance, and the 409 branch is what makes the violation
    diagnosable instead of silent.
 
+   It is now also an agreement, which is weaker than a mechanism and worth
+   more than nothing: their end has undertaken not to write to a campaign's
+   delivery feed again, calls the 3 November trial the one exception, and
+   says it would ask first and expect a refusal. Treat it as a commitment
+   that can be checked against, not as a guarantee — if a 409 ever arrives
+   naming a delivery we have no record of, that undertaking is what has
+   broken, and it is worth asking them before assuming a bug here.
+
+   They also considered exposing `highest_sequence` on the response, which
+   would turn this from detectable-after-collision into detectable-before,
+   and decided against building it on the grounds that it is a second
+   mechanism for a hazard that does not currently exist. The option is open:
+   they already compute `max(sequence)` inside their gap check, so it is a
+   one-line change on their side, to be asked for if a second writer ever
+   appears rather than in advance.
+
    It nearly happened. Their session was authorised to inject a test delivery
    of its own to close its read-path gap, realised it would take sequence 1,
    and stopped — our empty table would have allocated 1 too. Our 409 handling
