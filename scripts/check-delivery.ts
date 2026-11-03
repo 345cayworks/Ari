@@ -201,6 +201,52 @@ if (partial.ok) {
   check("with a reason", (q2!.publication?.blockers.length ?? 0) > 0);
 }
 
+console.log("");
+console.log("An unquotable delivery cannot contain a quotable question");
+// The receiving end composes the gate conjunctively: a parent that withholds
+// cannot be reinstated by a child, because a gate exists to withhold. That is
+// their decision and the right one — it is also what makes the test marking
+// work at all, since the notice sits at delivery level and must suppress
+// everything beneath it.
+//
+// This side must never put them in a position where that rule has to save us.
+// The builder's `input.blockers.length === 0` conjunct guarantees it today;
+// this check is here so an edit dropping that conjunct fails loudly rather
+// than shipping a delivery whose meaning depends on how the far end composes.
+const mixed = buildDelivery(
+  input({
+    blockers: ["Weighting did not converge, so the weighted figures are unreliable."],
+    tallies: [
+      tally(),
+      tally({
+        questionId: "Q2",
+        text: "Reached by fewer people",
+        total: 300,
+        totalWeight: 300,
+        answers: [
+          { answer: "Yes", count: 150, weight: 150 },
+          { answer: "No", count: 140, weight: 140 },
+          { answer: "Don't know", count: 10, weight: 10 },
+        ],
+      }),
+    ],
+  }),
+);
+check("builds", mixed.ok, mixed.ok ? undefined : mixed.problems.join("; "));
+if (mixed.ok) {
+  check("the delivery is unquotable", !mixed.payload.publication.quotable);
+  const gated = mixed.payload.questions.filter((q) => q.publication !== undefined);
+  check("the thin question carries its own gate", gated.length === 1);
+  check(
+    "and no question gate is quotable while the delivery is not",
+    mixed.payload.questions.every((q) => q.publication?.quotable !== true),
+  );
+  check(
+    "the question's reasons include the delivery's",
+    gated[0]?.publication?.blockers.some((b) => b.includes("did not converge")) === true,
+  );
+}
+
 console.log("\nThings that must be refused rather than trimmed");
 const longText = buildDelivery(input({ tallies: [tally({ text: "x".repeat(LIMITS.text + 1) })] }));
 check("over-long question text is a problem", !longText.ok);

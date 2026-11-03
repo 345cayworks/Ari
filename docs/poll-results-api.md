@@ -226,9 +226,28 @@ Three things the receiver does with the gate that this document did not ask for
 *(receiver)*:
 
 - **Per-question `publication`.** A question may carry its own
-  `{ quotable, blockers }`, which overrides the top-level block for that
-  question only. Omit it and the top-level gate applies — so a payload shaped
-  exactly like the example below is accepted unchanged.
+  `{ quotable, blockers }`. Omit it and the top-level gate applies — so a
+  payload shaped exactly like the example below is accepted unchanged.
+
+  **It narrows; it never reinstates.** The levels compose conjunctively: a
+  figure is quotable only if every level covering it says so, and a parent
+  that withholds cannot be overridden by a child. "Overrides" was the word
+  this document used and it was wrong in the one direction that matters — a
+  gate exists to withhold, and a child that could reinstate what its parent
+  refused is not a gate. It is also what makes the test marking work at all,
+  since that notice sits at the delivery level and has to suppress everything
+  beneath it.
+
+  The provider cannot produce the contradiction anyway: a per-question gate is
+  only quotable when the delivery has no blockers, which
+  `scripts/check-delivery.ts` pins so an edit dropping that condition fails
+  rather than shipping a payload whose meaning depends on how the far end
+  composes.
+
+  Reasons from every refusing level are shown together rather than only the
+  nearest. A district suppressed for its own base inside a poll suppressed for
+  its weighting has two things wrong with it, and a reader deciding whether to
+  trust the number needs both.
 - **`quotable: false` with an empty `blockers` array is refused** with a `422`.
   A figure withheld without a reason renders as "unavailable", and that is how
   somebody talks themselves into using the number anyway. If the sender marks
@@ -237,14 +256,25 @@ Three things the receiver does with the gate that this document did not ask for
   the question, on the grounds that a subgroup whose gate is buried in a blob
   is a subgroup whose gate gets forgotten by whoever writes the chart.
 
-One thing to know about the far end, and worth stating precisely because this
-document could be read as a stronger claim: **today the receiver stores the
-gate faithfully and nothing reads it.** `GET /v1/polls` returns JSON; nothing
-charts the numbers. So the gate is enforced by storage, by the parser refusing
-an unquotable figure that gives no reason, and by documentation — not by a
-renderer declining to draw a bar. Whoever writes that renderer inherits the
-hard requirement above, and until they do, "the receiver honours the gate"
-means it keeps it intact rather than acts on it.
+A renderer now exists at the far end and is live, so the gate is enforced in
+the one place a reader actually meets it rather than only by storage, by the
+parser and by documentation. An unquotable delivery renders its reasons in
+place of its numbers — no bars, no percentages, no counts anywhere on the
+page — and a withheld figure is one the HTML never contained, because the page
+is server-rendered rather than painted from JSON by a script where the gate
+would be logic no test could reach.
+
+It was checked by breaking it rather than by asserting it: flipping a
+fixture's `quotable` to true fails four tests, and neutering the gate to
+always permit fails eleven. The first shows the assertions are tied to the
+flag; the second shows the gate is doing the work. Withheld figures carry
+sentinel counts appearing nowhere else on the page, so "absent from the HTML"
+cannot pass by coincidence.
+
+What is still unexercised is the whole path end to end: the renderer has been
+proved against fixtures and against a real page, never against a delivery that
+came from this side. The first one runs the builder, the parser, the store, the
+read, the gate and the page for the first time together.
 
 ## Unknown fields are refused
 
