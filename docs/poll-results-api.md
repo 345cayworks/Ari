@@ -367,10 +367,27 @@ provider believing figures were published that were not.
 
 This is the only place in the contract where a success code is a problem, and
 the provider must tell the two apart by whether it expected the delivery to be
-new. The two conflict codes then compose: a first send answering `200` means a
-`delivery_id` collision, and a corrected re-send answering `409` means the
-record of a refusal was wrong. Different faults, each distinguishable from a
-success without reading a log.
+new.
+
+**Which code a wrong refusal produces depends on a choice the table above does
+not make for you.** A corrected re-send may reuse the original `delivery_id` or
+mint a fresh one — the receiver accepts either, since only the sequence is
+constrained — but the two surface the same fault differently:
+
+| Corrected re-send uses | A refusal record that was wrong answers | Because |
+| --- | --- | --- |
+| The **same** `delivery_id` | `200 already_stored` | Idempotency matches first; the receiver keeps its copy and the corrected payload is discarded |
+| A **fresh** `delivery_id` | `409 sequence_taken` | No id matches, so the sequence constraint decides |
+
+Neither is wrong, and the provider needs the guard either way: a `200` must be
+treated as a failure when the delivery was expected to be new, or the fault is
+absorbed as a success. This implementation reuses the id, because the row's
+primary key *is* the delivery id here and a fresh one would leave the stored
+payload disagreeing with the row it sits on — breaking the replay path to
+harden the re-send path. So the case to expect is the `200`, and `409` is left
+for the one it cannot cover: a sequence the receiver holds under a
+`delivery_id` the provider has no record of at all, where `held_by` is the only
+thing that would let anyone work out what happened.
 
 ### A lost delivery leaves a permanent gap
 
