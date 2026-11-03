@@ -370,8 +370,13 @@ export async function resolveCallback(formData: FormData): Promise<void> {
  */
 export async function deliverResults(formData: FormData): Promise<void> {
   const poll = await requirePoll(field(formData, "pollId"));
+  // A test delivery is still permanent at the far end, so it is marked in the
+  // payload rather than merely intended: the gate carries a sentence saying it
+  // is a trial and not a measurement of opinion, and that travels with the
+  // numbers for as long as they exist.
   const result = await deliverPoll(poll, {
     includePartial: field(formData, "include") === "partial",
+    markAsTest: field(formData, "asTest") === "1",
   });
   revalidatePath(`/admin/polls/${poll.id}`);
 

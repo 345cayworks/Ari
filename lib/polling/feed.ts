@@ -1,6 +1,11 @@
 import type { Poll } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { buildDelivery, type BuildResult, type DeliveryPayload } from "./delivery";
+import {
+  buildDelivery,
+  TEST_DELIVERY_BLOCKER,
+  type BuildResult,
+  type DeliveryPayload,
+} from "./delivery";
 import { publicationBlockers } from "./publication";
 import { computeStats } from "./results";
 import { loadPollResults } from "./weighted";
@@ -62,7 +67,7 @@ export type DeliveryOutcome =
  */
 export async function deliverPoll(
   poll: Poll,
-  options: { target?: string; includePartial?: boolean } = {},
+  options: { target?: string; includePartial?: boolean; markAsTest?: boolean } = {},
 ): Promise<DeliveryOutcome> {
   const target = options.target ?? TARGET_DEFAULT;
   const includePartial = options.includePartial ?? false;
@@ -86,6 +91,7 @@ export async function deliverPoll(
     sequence: 0, // replaced once a sequence is allocated below
     wave: priorWaves + 1,
     includePartial,
+    markAsTest: options.markAsTest ?? false,
   });
   if (built === null) {
     return { ok: false, reason: "This poll has no completed interviews to deliver." };
@@ -172,11 +178,18 @@ export async function redeliverRefused(
   // means the far end kept its copy and these numbers were dropped, and it is
   // recorded as a failure rather than a delivery. The invariant is worth more
   // than the second mechanism.
+  // Whether this was a test is recoverable from what was stored, so it needs
+  // no column: a re-send of a test delivery must stay marked as one, and
+  // losing that on a retry would turn a trial into something that reads as
+  // fieldwork.
+  const wasTest = (stored?.publication?.blockers ?? []).includes(TEST_DELIVERY_BLOCKER);
+
   const built = await assemble(row.poll, {
     deliveryId: id,
     sequence: row.sequence,
     wave,
     includePartial: options.includePartial ?? false,
+    markAsTest: wasTest,
   });
   if (built === null) {
     return { ok: false, id, reason: "This poll has no completed interviews to deliver." };
@@ -211,7 +224,13 @@ export async function redeliverRefused(
  */
 async function assemble(
   poll: Poll,
-  opts: { deliveryId: string; sequence: number; wave: number; includePartial: boolean },
+  opts: {
+    deliveryId: string;
+    sequence: number;
+    wave: number;
+    includePartial: boolean;
+    markAsTest: boolean;
+  },
 ): Promise<BuildResult | null> {
   const [calls, results] = await Promise.all([
     prisma.pollCall.findMany({
@@ -244,7 +263,12 @@ async function assemble(
     tallies,
     weighting,
     answered,
-    blockers: publicationBlockers(answered, weighting),
+    // Appended rather than replacing: a test delivery of an underpowered
+    // poll is both things, and dropping the real gate's reasons to make
+    // room for the test notice would lose true information.
+    blockers: opts.markAsTest
+      ? [TEST_DELIVERY_BLOCKER, ...publicationBlockers(answered, weighting)]
+      : publicationBlockers(answered, weighting),
     weightedTo: weightedToLabel(weightingConfig, weighting),
     rotated: calls.filter((c) => c.optionOrder !== null).length,
   });

@@ -77,13 +77,34 @@ export async function DeliveryPanel({
         </p>
       )}
 
-      <form action={deliverResults} className="mt-4">
-        <input type="hidden" name="pollId" value={poll.id} />
-        <input type="hidden" name="include" value={includePartial ? "partial" : "completed"} />
-        <button type="submit" className="btn-primary" disabled={!ready}>
-          Deliver these results
-        </button>
-      </form>
+      {/* Two buttons rather than a checkbox, because the difference is not a
+          setting — it is what the campaign will permanently hold. A delivery
+          cannot be withdrawn, so the test form says what it writes. */}
+      <div className="mt-4 flex flex-wrap items-start gap-3">
+        <form action={deliverResults}>
+          <input type="hidden" name="pollId" value={poll.id} />
+          <input type="hidden" name="include" value={includePartial ? "partial" : "completed"} />
+          <button type="submit" className="btn-primary" disabled={!ready}>
+            Deliver these results
+          </button>
+        </form>
+
+        <form action={deliverResults}>
+          <input type="hidden" name="pollId" value={poll.id} />
+          <input type="hidden" name="include" value={includePartial ? "partial" : "completed"} />
+          <input type="hidden" name="asTest" value="1" />
+          <button type="submit" className="btn-secondary" disabled={!ready}>
+            Deliver as a test
+          </button>
+        </form>
+      </div>
+
+      <p className="mt-3 text-sm text-ink/50">
+        A test delivery is marked unquotable and carries a sentence saying it is
+        a trial and not a measurement of opinion. It is still permanent — there
+        is no way to withdraw a delivery — so the marking is the whole point of
+        it rather than a formality.
+      </p>
 
       {deliveries.length === 0 ? (
         <p className="mt-4 text-sm text-ink/50">Nothing has been delivered yet.</p>

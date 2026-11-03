@@ -23,6 +23,7 @@
 import {
   buildDelivery,
   LIMITS,
+  TEST_DELIVERY_BLOCKER,
   type BuildInput,
   type DeliveryAnswer,
   type DeliveryBreakdown,
@@ -121,6 +122,34 @@ if (healthy.ok) {
   check("margins differ by answer", view.moe !== noView.moe);
   check("a near-even split has a wider margin than a lopsided one", view.moe > noView.moe);
   check("breakdowns are omitted when there are none", p.breakdowns === undefined);
+}
+
+console.log("");
+console.log("A test delivery, which is permanent at the far end");
+const asTest = buildDelivery(
+  input({
+    blockers: [
+      TEST_DELIVERY_BLOCKER,
+      "The sample is 6; 100 is the usual floor for publishing a headline figure.",
+    ],
+  }),
+);
+check("builds", asTest.ok, asTest.ok ? undefined : asTest.problems.join("; "));
+check(
+  `the notice fits the text limit (${TEST_DELIVERY_BLOCKER.length} of ${LIMITS.text})`,
+  TEST_DELIVERY_BLOCKER.length <= LIMITS.text,
+);
+if (asTest.ok) {
+  const gate = asTest.payload.publication;
+  check("is unquotable", !gate.quotable);
+  check("carries the notice verbatim", gate.blockers.includes(TEST_DELIVERY_BLOCKER));
+  check("the notice comes first, ahead of the sample-size reason", gate.blockers[0] === TEST_DELIVERY_BLOCKER);
+  check(
+    "says in words that it is not fieldwork and not a measurement",
+    /not fieldwork/i.test(TEST_DELIVERY_BLOCKER) &&
+      /not[\s\S]{0,12}measurement/i.test(TEST_DELIVERY_BLOCKER),
+  );
+  check("keeps the real gate's reason as well", gate.blockers.length === 2);
 }
 
 console.log("\nA poll that should not be published");
@@ -240,6 +269,7 @@ if (parserFlag === -1 || process.argv[parserFlag + 1] === undefined) {
     ["a healthy poll", healthy],
     ["a poll that should not be published", thin],
     ["a question only part of the sample reached", partial],
+    ["a test delivery", asTest],
   ];
   for (const [label, built] of cases) {
     if (!built.ok) {

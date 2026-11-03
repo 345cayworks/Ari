@@ -132,37 +132,37 @@ the `NEON_*` names the cloud environment used.
    pre-rotation wave against a post-rotation one without saying so — the first
    option in each list will appear to lose a couple of points when nothing
    moved.
-5. **Turn on campaign delivery.** The migration is applied and the Worker is
-   deployed, so what remains is the credential and the switch: get the feed
-   key from the Politracker end, put it in `POLITRACKER_FEED_TOKEN` as a
-   Worker secret, and set `poll_feed` to
-   `{ "enabled": true, "endpointUrl": "..." }`. Then check
-   the sequence on the first delivery, not just the 202 — a `200
-   already_stored` means the id was already held, which on a first delivery
-   would mean something is wrong.
+5. **Turn on campaign delivery.** Migration applied, Worker deployed, and
+   `poll_feed` is set to
+   `{ "enabled": true, "endpointUrl": "https://politracker.cayworks.net/v1/poll-results" }`
+   — that hostname checked against their wrangler routes, not assumed; their
+   README names two custom domains and the other is the API's older one. So
+   the only thing still missing is the credential:
 
-   **Do not make the first delivery from the throwaway test poll.** There is
-   no staging campaign at the receiving end and no way to delete a delivery
-   through the API: append-only means append-only, and the only removal path
-   is deleting the campaign, which takes its register of electors with it. So
-   a delivery of invented numbers would sit in a real campaign's feed for
-   ever. Either deliver a real poll, or — if a live round trip is wanted
-   first — deliver one whose gate marks it unquotable with a blocker saying in
-   plain words that it is a test and not fieldwork. That is permanent too, but
-   it is permanently honest, and the receiver stores the blocker alongside the
-   figure.
+   ```
+   npx wrangler secret put POLITRACKER_FEED_TOKEN
+   ```
 
-   A key already exists at the far end, unused: campaign `STERLING`, scope
-   `poll_results`. It has deliberately not been handed over, and whether to
-   use it or have a fresh one issued for a different campaign is still open.
-   `STERLING` has one seat and thirteen electors, so it is plainly not a live
-   operation — which is the point, given a delivery cannot be deleted.
+   Run that yourself and paste the key at the prompt. It is deliberately not
+   installed by Claude and was never asked for in chat: the key is a
+   credential for another platform, and the fewer contexts it has been in, the
+   better. Redeploy is not needed — a secret takes effect on its own.
 
-   Do not expect `last_used_at` to tell you anything yet: the far end's
-   use-recording is committed but not deployed. When it is, it means "this key
-   reached the endpoint" — it is written before the payload is parsed, so a
-   422 counts. For deliveries that actually landed, count `ACCEPTED` rows in
-   `PollDelivery` here.
+   Then **use "Deliver as a test"** on the poll's Results tab for the first
+   one. There is no staging campaign at the receiving end and no way to delete
+   a delivery: append-only means append-only, and the only removal path takes
+   the campaign's register of electors with it. The test button marks the
+   delivery unquotable and attaches a sentence saying in plain words that it
+   is a trial and not a measurement of opinion, which is what makes a
+   permanent row honest rather than merely harmless. The target campaign is
+   `STERLING` — one seat, thirteen electors, chosen at their end precisely
+   because it is not a live operation.
+
+   Check the sequence, not just the 202. A `200 already_stored` on a first
+   delivery means the id was already held, which would mean something is
+   wrong. And look at the stored row: `markAsTest`'s wiring is the one part of
+   this path no check covers.
+
 6. **Delete the test poll** `TEST — Cayman Pulse (safe to delete)` when done.
    The `Cayman Life` poll beside it is the user's; leave it alone.
 7. **`{{agent_name}}`** now appears in the live greeting and Role line. The
@@ -295,7 +295,25 @@ Three things worth knowing before changing any of it:
    exits 0 either way — the builder's own checks really did pass, and there is
    no CI here to mislead. If this is ever wired into CI, pass `--parser` or the
    contract goes unverified behind a green build.
-3. **A refusal consumes no sequence; a failure might have.** A sequence is
+3. **A test delivery is marked in the payload, not merely intended.**
+   `TEST_DELIVERY_BLOCKER` is prepended to the gate's blockers, which forces
+   the delivery unquotable and carries a fixed sentence saying it is a trial
+   and not a measurement of opinion. The sample-size blocker alone was not
+   enough: "the sample is 6" is true and still lets a reader conclude it was
+   real fieldwork with few respondents. The wording is fixed rather than
+   operator-supplied because a delivery cannot be withdrawn and it has to read
+   correctly to someone who was not here.
+
+   `redeliverRefused` recovers the intent from the stored payload's blockers
+   rather than from a column, so a re-send of a test stays marked as one.
+
+   **Not covered by `check:delivery`:** the checks verify what a payload
+   carrying that blocker does — unquotable, notice first, accepted by their
+   parser — but not that `markAsTest` is what produces it, because that path
+   goes through `feed.ts` and needs a database. The flag's wiring is verified
+   only by the first delivery actually being marked. Look at the row.
+
+4. **A refusal consumes no sequence; a failure might have.** A sequence is
    spent if and only if the far end answered 2xx — a 401 or 403 returns before
    the payload is read and a 422 before it is stored. So a `REFUSED` row is
    rebuilt and re-sent under the number it already holds, leaving no gap, and
@@ -304,7 +322,7 @@ Three things worth knowing before changing any of it:
    there could come back `200 already_stored`, which would mean the far end
    kept its copy and these numbers were dropped. `send` treats that 200 as a
    failure rather than a success for exactly that reason.
-4. **A 409 is ours to fix; a 500 is theirs.** A 409 means the far end already
+5. **A 409 is ours to fix; a 500 is theirs.** A 409 means the far end already
    holds that sequence under a different delivery, which has one cause: a
    delivery recorded here as refused actually landed. `held_by` names it, and
    `send` corrects that row to ACCEPTED rather than leaving a landed delivery
@@ -323,7 +341,7 @@ Three things worth knowing before changing any of it:
    diagnosable rather than impossible — the conflict path has never run with
    a credential at either end.
 
-5. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
+6. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type
    carries the shape and the limits already cover it, so a crosstab engine has
    somewhere to plug in. They are optional in the contract, so nothing is

@@ -17,6 +17,28 @@ import type { WeightingResult } from "./weighting";
  * stops the copy drifting.
  */
 
+/**
+ * What a test delivery says about itself, permanently.
+ *
+ * A delivery cannot be withdrawn: the receiving end is append-only and has no
+ * delete path, and the only removal takes the campaign's register of electors
+ * with it. So the first delivery made to prove the connection works is a row
+ * somebody may read years from now, and it has to be honest then rather than
+ * merely harmless now.
+ *
+ * The publication gate would already refuse a trial poll for its sample size,
+ * and that is not enough. "The sample is 6" is true and still lets a reader
+ * conclude this was real fieldwork with few respondents. This says what it
+ * actually is.
+ *
+ * Fixed wording, not an operator's free text, because it has to read correctly
+ * to someone who was not here and cannot ask.
+ */
+export const TEST_DELIVERY_BLOCKER =
+  "This delivery is a test of the connection between the polling platform and " +
+  "this campaign, not fieldwork. The figures come from a trial poll and are not " +
+  "a measurement of public opinion. Do not publish, quote or chart them.";
+
 /** The receiver's limits. Exceeding one is a 422, not a truncation. */
 export const LIMITS = {
   text: 2000,
