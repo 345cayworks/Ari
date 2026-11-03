@@ -14,6 +14,7 @@ import {
 import { TARGET_PRESETS } from "@/lib/polling/census";
 import { findTemplate } from "@/lib/polling/templates";
 import { normalizePhone, tryNormalizePhone } from "@/lib/polling/phone";
+import { extractNumbers } from "@/lib/polling/numbers";
 import { parseCategories, readWeightingConfig, type WeightTarget } from "@/lib/polling/weighting";
 import { deliverPoll, redeliverRefused, replayDelivery } from "@/lib/polling/feed";
 import {
@@ -194,16 +195,6 @@ function parseTime(value: string): number | null {
   if (!m) return null;
   const minutes = Number(m[1]) * 60 + Number(m[2]);
   return minutes <= 1440 ? minutes : null;
-}
-
-// Pull one phone number per line from pasted text or a CSV/TXT upload:
-// the first cell with at least 7 digits. Header rows have none, so drop out.
-function extractNumbers(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.split(/[,;\t]/).find((cell) => cell.replace(/\D/g, "").length >= 7))
-    .filter((cell): cell is string => Boolean(cell))
-    .map((cell) => cell.replace(/^["']|["']$/g, "").trim());
 }
 
 export async function createBatch(formData: FormData): Promise<void> {

@@ -3,17 +3,10 @@ import { Role } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { compareQuestionIds } from "@/lib/polling/results";
+import { csvCell } from "@/lib/utils";
 import { loadPollResults } from "@/lib/polling/weighted";
 
 export const dynamic = "force-dynamic";
-
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const s = String(value);
-  // Quote everything that needs it, and defuse spreadsheet formulas.
-  const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
-  return /[",\n\r]/.test(safe) || safe !== s ? `"${safe.replace(/"/g, '""')}"` : safe;
-}
 
 // One row per call, one column per question. No phone numbers.
 export async function GET(

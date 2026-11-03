@@ -382,6 +382,62 @@ async function CallsTab({
         </Banner>
       )}
 
+      {/* Screening report. Counts arrive in the query string because a
+          screening pass writes nothing there is a row to link to. */}
+      {searchParams.screened !== undefined && (
+        <section className="card space-y-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold">
+              {Number(searchParams.sCallable).toLocaleString()} of{" "}
+              {Number(searchParams.sTotal).toLocaleString()} screened numbers are callable
+            </h2>
+            <span className="text-xs text-ink/40">
+              Allocations as published {searchParams.sSourced}. Nothing dialled, nothing stored.
+            </span>
+          </div>
+          <dl className="grid gap-px overflow-hidden rounded-xl bg-ink/[0.07] sm:grid-cols-3 lg:grid-cols-5">
+            {(
+              [
+                ["Callable", searchParams.sCallable],
+                ["Mobile", searchParams.sMobile],
+                ["Landline", searchParams.sFixed],
+                ["Exchange not allocated", searchParams.sUnallocated],
+                ["Allocated, not dialable", searchParams.sNotDialable],
+                ["Duplicate", searchParams.sDuplicate],
+                ["Malformed", searchParams.sInvalid],
+                ["Outside +1 345", searchParams.sOutOfArea],
+                ["On do-not-call", searchParams.sDnc],
+                ["Already called", searchParams.sCalled],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label} className="bg-white px-4 py-3">
+                <dt className="text-[11px] uppercase leading-tight tracking-wider text-ink/45">
+                  {label}
+                </dt>
+                <dd className="mt-1 font-semibold tabular-nums text-ink">
+                  {Number(value ?? 0).toLocaleString()}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {searchParams.sTopUnallocated ? (
+            <p className="text-xs leading-relaxed text-ink/60">
+              <span className="font-medium text-ink/80">Exchanges drawn that do not exist:</span>{" "}
+              {String(searchParams.sTopUnallocated)
+                .split(",")
+                .map((pair) => {
+                  const [nxx, n] = pair.split(":");
+                  return `345-${nxx} (${n})`;
+                })
+                .join(", ")}
+              . OfReg has allocated 86 of the 800 structurally valid exchanges, so a
+              generator drawing from all of them loses most of its draws before any
+              number is dialled.
+            </p>
+          ) : null}
+        </section>
+      )}
+
       {searchParams.reconciled !== undefined && (
         <Banner tone="ok">
           {Number(searchParams.reconciled)
@@ -411,6 +467,92 @@ async function CallsTab({
         <button type="submit" className="btn-secondary shrink-0">
           Check now
         </button>
+      </form>
+
+      <form
+        method="post"
+        action={`/admin/polls/${poll.id}/screen`}
+        encType="multipart/form-data"
+        className="card space-y-5"
+      >
+        <div>
+          <h2 className="text-lg font-semibold">Screen a list before calling it</h2>
+          <p className="mt-1 text-sm leading-relaxed text-ink/60">
+            Checks every number against OfReg&rsquo;s published +1 345 exchange
+            allocations, the do-not-call list, and this poll&rsquo;s own call history.
+            Nothing is dialled and nothing is stored, so a list can be screened as
+            often as you like.
+          </p>
+        </div>
+        <div>
+          <label className="label" htmlFor="screenNumbers">Numbers</label>
+          <textarea
+            id="screenNumbers"
+            name="numbers"
+            rows={6}
+            className="input font-mono text-xs"
+            placeholder={"3459491234\n3453210000"}
+          />
+          <p className="mt-1 text-xs text-ink/50">
+            One per line, or a CSV column. Up to {MAX_BATCH_NUMBERS.toLocaleString()} at a
+            time.
+          </p>
+        </div>
+        <div>
+          <label className="label" htmlFor="screenFile">Or upload a CSV/TXT</label>
+          <input
+            id="screenFile"
+            name="file"
+            type="file"
+            accept=".csv,.txt,text/csv,text/plain"
+            className="input"
+          />
+        </div>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="screenLine">Line types</label>
+            <select id="screenLine" name="line" className="input" defaultValue="any">
+              <option value="any">Mobile and landline</option>
+              <option value="mobile">Mobile only</option>
+            </select>
+            <p className="mt-1 text-xs text-ink/50">
+              Dropping landlines skews a sample away from older and less mobile
+              households, so both is the default.
+            </p>
+          </div>
+          <div className="space-y-2.5">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="skipAlreadyCalled"
+                defaultChecked
+                className="mt-0.5 h-4 w-4 rounded border-ink/20"
+              />
+              <span>Treat numbers already called for this poll as used</span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="includeInstitutional"
+                className="mt-0.5 h-4 w-4 rounded border-ink/20"
+              />
+              <span>
+                Include government and business direct-dial ranges
+                <span className="block text-xs text-ink/50">
+                  Four exchanges that reach a switchboard rather than a household.
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button className="btn-primary" type="submit" name="mode" value="summary">
+            Screen the list
+          </button>
+          <button className="btn-secondary" type="submit" name="mode" value="csv">
+            Download per-number CSV
+          </button>
+        </div>
       </form>
 
       <form key={`b${searchParams.batch}`} action={createBatch} className="card space-y-5">

@@ -8,7 +8,14 @@ import { createHmac } from "node:crypto";
 export function tryNormalizePhone(input: string): string | null {
   const digits = input.replace(/\D/g, "");
   // Local Cayman number.
-  if (digits.length === 7) return `+1345${digits}`;
+  //
+  // **Drop the exchange test and `0123456` is dialled as +1 345 012 3456.**
+  // The 10- and 11-digit branches below have always applied `[2-9]` to the
+  // exchange; this branch did not, so a seven-digit number with a leading 0
+  // or 1 in the exchange reached Retell. One typo is rare, but a list from a
+  // random-digit generator produces the whole class, which is what surfaced
+  // this — see `numbers.ts`.
+  if (digits.length === 7) return /^[2-9]\d{6}$/.test(digits) ? `+1345${digits}` : null;
   // NANP without the country code.
   if (digits.length === 10 && /^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return `+1${digits}`;
   // NANP with it.

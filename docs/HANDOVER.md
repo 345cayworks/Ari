@@ -307,6 +307,90 @@ with a view — so the two can never be silently swapped between, and the
 disclosure block assembles everything a published figure should carry from the
 poll's own data.
 
+## Screening a list before it becomes a campaign
+
+Built for lists from a random-digit generator, where the dominant cost is not
+a bad number here and there but a whole class of numbers that was never
+dialable. The arithmetic is the justification:
+
+| | NXX codes | 7-digit space |
+|---|---|---|
+| Structurally valid (N = 2-9) | 800 | 8,000,000 |
+| Allocated by OfReg | 86 | 860,000 |
+| Dialable to a possible respondent | 74 | 740,000 |
+
+So RDD across structurally-valid space loses roughly 89% of its draws to
+exchanges with no subscribers behind them, and nothing in the platform noticed
+before this: `tryNormalizePhone` checks the *shape* of a number and had no
+notion of which exchanges exist.
+
+**Where it is.** `lib/polling/numbers.ts` classifies and screens, pure, with no
+`lib/db.ts` import, so it runs under Node and `npm run check:numbers` exercises
+it. `lib/polling/nxx-345-data.ts` holds OfReg's table. `screenForPoll` in
+`calls.ts` adds the two database checks. `app/admin/polls/[id]/screen/route.ts`
+serves both buttons on the Calls tab form: one redirects back with counts, the
+other returns a per-number CSV.
+
+**Facts and policy are in different files, deliberately.** The data file holds
+only what OfReg publishes — code, holder, service, note — and every judgement
+about whether a code can reach a respondent lives in `numbers.ts`. If policy
+lived in the data file, re-transcribing an updated table could silently widen
+what the platform is willing to dial.
+
+**An unrecognised row is unreachable, and says so.** A service type or note
+that no rule covers sets `unrecognised`, which forces the code unreachable and
+fails `check:numbers`. The conservatism is one-directional on purpose:
+classifying a live exchange as dead costs reach and shows up as a count in the
+report, while classifying a stop line or a paging range as live puts calls
+where they cannot be answered and nothing in the system contradicts it. The
+rule only fires where it could change the outcome — an unparsed note on a code
+already excluded by its service type is informational, since no rule ever
+upgrades a code to reachable. That distinction was found by `check:numbers`
+failing on 345-995, which was classified correctly.
+
+**Nothing is stored.** No batch row, no call row, no plaintext list; the hashes
+exist for the do-not-call and already-called lookups and are gone when the
+function returns. That keeps the schema's promise — numbers exist only as an
+HMAC — and keeps screening a list distinguishable from having called it. The
+CSV *does* contain numbers, unlike `export/route.ts`, which deliberately does
+not: it is the operator's own list handed back with a verdict per line, which
+is the point of it.
+
+**The real bug this turned up.** `tryNormalizePhone` applied the NANP `[2-9]`
+exchange test on its 10- and 11-digit branches and **not** on the 7-digit
+Cayman branch, so `0123456` normalised to `+13450123456` and was dialled. One
+hand-typed number like that is rare; a generator produces the entire class,
+which is how it surfaced. Fixed, with the stakes written at the branch.
+
+**One thing overstated while scoping, recorded because the correction matters
+more than the claim.** `createPollBatch` computes `skippedInvalid` as
+`rawNumbers.length - byHash.size`, which folds duplicates in with invalids, and
+it was described as a bug that misreports duplicates as invalid. The Calls tab
+already labels that number "invalid or duplicate", so no operator is misled —
+the column's *name* is wrong, not the display. It was left alone rather than
+split, because changing what the stored column counts would silently change
+what historical rows mean, and the distinction is only useful for diagnosing a
+generator. The screening report splits them properly instead, where nothing is
+stored.
+
+**What is verified and what is not.** 47 assertions in `check:numbers`, with
+the expected counts derived by reading OfReg's table rather than by recording
+what the code said. Four mutations confirm they discriminate: dropping the note
+exclusions fails 10, a new unparsed OfReg note fails 6, removing duplicate
+detection fails 4, reverting the 7-digit fix fails 4. `next build` is clean and
+registers the route. The route returns 403 to an unauthenticated POST, so the
+handler executes. **The signed-in flow has not been exercised** — nobody has
+pasted a list into the form and read the panel — and none of this is deployed.
+
+**Two limits worth knowing.** Cayman has number portability (345-767 is
+reserved for it) and a ported number keeps its original exchange, so the
+mobile/landline split is indicative rather than authoritative; how far off it
+is depends on a Cayman porting rate nobody here has. And OfReg's table says of
+itself that it "has no legal standing". The table was transcribed by hand on
+2026-11-03 — there is no refresh script, the comment claiming one was wrong and
+is corrected — so `SOURCED_AT` is shown in the UI and `check:numbers` fails on
+a row count that has moved, which only helps once somebody runs it.
+
 ## Open risks
 
 - **`{{time_of_day}}`** in the repo prompt is supplied by nothing. Moot while
@@ -893,6 +977,7 @@ than merely allowed.
 - `lib/polling/retell.ts`: Retell API helper and signature check (`x-retell-signature`, `v=<ms>,d=<hex>`, HMAC-SHA256(apiKey, body+ms), 5-minute window). It matches `retell-sdk` 6.2.12's `verify`.
 - `lib/polling/calls.ts`: links calls to polls (metadata `poll_id` / `batch_id`, or dynamic variable `poll_id`, or agent ID). Also function handlers, webhook ingestion, `derivePromptVariables`, `placePollCall`, `createPollBatch` (chunks of 1,000, parallel, timezone `America/Cayman`) and `reconcilePollCalls`.
 - `lib/polling/phone.ts`: **`tryNormalizePhone`** is strict (7-digit Cayman, or NANP with area and exchange codes starting 2-9) and returns `null`; it gates the two places calls are placed. `normalizePhone` stays lenient for recording and hashing inbound numbers, so ingestion can't be broken by an odd number. Before this, an 11-digit typo became `+33453249000` and was dialled — France.
+- `lib/polling/numbers.ts`: OfReg exchange classification and list screening, pure and Node-testable. `lib/polling/nxx-345-data.ts` is the published table, facts only. `extractNumbers` lives here too, so the screening pass and the dialling pass cannot disagree about what counts as a line.
 - `lib/polling/results.ts`: `POLL_VARIABLES` (the admin setup form is generated from this list), stats, tallies (display order comes from "(A / B / C)" in the question text — the canonical order, not whatever any respondent heard, which is what lets rotation work without disturbing the results).
 - `lib/polling/rotation.ts`: per-respondent option rotation and the scale/terminal-option lexicons. `isNoViewOption` is the narrower "no view" set used for the "those expressing a view" base; `isTerminalOption` adds Something else / Other / None of these, which must stay last but *are* a view.
 - `lib/polling/templates.ts`: the four question sets and the reasoning shown beside each.
@@ -906,6 +991,7 @@ than merely allowed.
 
 - Answers are saved live through `record_answer`, because Retell's post-call analysis fields are configured per agent while questions change per poll. Analysis `answers_json` only fills gaps.
 - Phone numbers are stored only as HMACs, except `PollCallback.phoneNumber`, which is cleared once the callback is handled.
+- Screening classifies and does not decide: it reports the mobile/landline split and leaves the sampling choice to the operator, because dropping landlines skews a sample away from older and less mobile households. Government and business direct-dial ranges are the one default exclusion, and a checkbox puts them back.
 - Next 15.5.28 is required because `@opennextjs/cloudflare` 1.20 needs Next ≥15.5.28.
 - The database uses Prisma 6 (not 7) with `@prisma/adapter-pg` (not Neon HTTP), so it can use Hyperdrive and be tested locally in workerd.
 - A poll cannot be activated without `survey_questions` **and** `company_name`: the company name is read aloud in the opening line, and a blank one would have every respondent hear "calling on behalf of" and a gap.

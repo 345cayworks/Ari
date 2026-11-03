@@ -2,6 +2,7 @@ import { PollCallOutcome, Prisma, type Poll } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { CALL_OUTCOMES } from "./config";
 import { hashPhone, normalizePhone, tryNormalizePhone } from "./phone";
+import { screen, type ScreenOptions, type ScreenReport } from "./numbers";
 import { rotateSurveyQuestions } from "./rotation";
 import {
   respondentNumber,
@@ -439,6 +440,70 @@ export interface BatchResult {
   skippedCalled: number;
   skippedInvalid: number;
   error?: string;
+}
+
+/**
+ * Screen a list for a poll without dialling any of it and without storing it.
+ *
+ * The same checks `createPollBatch` applies, in the same order, run as a
+ * report: structure, allocation, do-not-call, already-called. The point is to
+ * find out what a list is worth before a batch consumes it — which matters
+ * most for a list from a random-digit generator, where the usual outcome is
+ * that most of it was never dialable.
+ *
+ * Nothing is written. No batch row, no call row, no plaintext number: the
+ * hashes exist only for the two lookups and are gone when this returns. That
+ * is deliberate rather than incidental — if screening left a trace, screening
+ * a list and having called it would be indistinguishable afterwards.
+ */
+export type PollScreen = ScreenReport & {
+  onDoNotCall: string[];
+  alreadyCalled: string[];
+  /** Passed every check: what a batch would actually dial. */
+  callable: string[];
+};
+
+export async function screenForPoll(
+  pollId: string,
+  inputs: string[],
+  opts: ScreenOptions & { skipAlreadyCalled?: boolean } = {}
+): Promise<PollScreen> {
+  const poll = await prisma.poll.findUniqueOrThrow({ where: { id: pollId } });
+  const report = screen(inputs, opts);
+
+  // `report.clean` is already de-duplicated, so there is one hash per number
+  // and the counts below cannot double-count the way a raw input list would.
+  const byHash = new Map(report.clean.map((n) => [hashPhone(n), n]));
+  const hashes = [...byHash.keys()];
+
+  const dnc = await existingHashes(hashes, (part) =>
+    prisma.doNotCall.findMany({
+      where: { tenantId: poll.tenantId, phoneHash: { in: part } },
+      select: { phoneHash: true },
+    })
+  );
+  const called =
+    opts.skipAlreadyCalled === false
+      ? new Set<string>()
+      : await existingHashes(hashes, (part) =>
+          prisma.pollCall.findMany({
+            where: { pollId: poll.id, phoneHash: { in: part } },
+            select: { phoneHash: true },
+            distinct: ["phoneHash"],
+          })
+        );
+
+  // Do-not-call wins over already-called, so a number that is both is counted
+  // once and reported under the reason that would stop a call outright.
+  const onDoNotCall = hashes.filter((h) => dnc.has(h)).map((h) => byHash.get(h)!);
+  const alreadyCalled = hashes
+    .filter((h) => !dnc.has(h) && called.has(h))
+    .map((h) => byHash.get(h)!);
+  const callable = hashes
+    .filter((h) => !dnc.has(h) && !called.has(h))
+    .map((h) => byHash.get(h)!);
+
+  return { ...report, onDoNotCall, alreadyCalled, callable };
 }
 
 export async function createPollBatch(
