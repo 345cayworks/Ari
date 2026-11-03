@@ -76,7 +76,24 @@ The token is:
   a token cannot deliver into a campaign it was not issued for;
 - **write-only** — it reaches exactly one endpoint and cannot read anything;
 - **revocable**, and revocation takes effect immediately;
-- **logged** on use, so a delivery can be traced.
+- **logged** on use — with two caveats that were not true when this line was
+  first written, and one that is still not true today.
+
+  The claim was false when agreed. The receiver had a `touchFeedKey` that was
+  defined, exported and called from nowhere, so `last_used_at` could only ever
+  have been null. Checked at the commit in question rather than taken on
+  report. It is fixed at their end (`ab223d0`, recorded through
+  `ctx.waitUntil` so a failed bookkeeping write cannot fail a delivery) but
+  **not yet deployed**, so in the running Worker the column is still null.
+
+  And it means less than it sounds like. Use is recorded on **any
+  authenticated call**, including one whose payload is then refused with a
+  422 — the touch sits before the parse. So `last_used_at` answers "did this
+  key reach the endpoint", not "did a delivery land". That is the more useful
+  field of the two for diagnosis, because a key reading "never used" after a
+  week of rejected deliveries would send somebody looking in the wrong place
+  entirely. For deliveries that actually landed, count `ACCEPTED` rows in
+  `PollDelivery` on this side; the receiver's column will not tell you.
 
 Sent as `Authorization: Bearer ptk_...` over TLS. The receiver checks the key
 **before** it looks at the payload, so the detailed `422` messages below are
@@ -355,9 +372,19 @@ why that list is enforced in the receiver's parser and not just written here.
 
 ## Still open
 
-- **No key exists.** When the sender is ready to test, the far end issues one
-  against a real campaign. Do not invent a token to try the path: an unknown key
-  returns a flat `401` and tells you nothing, so a fabricated one buys a
+- **A key exists but has not been handed over.** One was issued at the far end
+  on its operator's instruction: campaign `STERLING`, scope `poll_results`,
+  never used. It has deliberately not been sent here, and whether it is the
+  one to use or a fresh one is issued for a different campaign is still open.
+  `STERLING` was picked because it has one seat and thirteen electors, so it
+  is plainly not a live operation — which matters, because there is no way to
+  delete a delivery.
+
+  Do not invent a token to try the path. An unknown key returns a flat `401`
+  and is byte-identical to sending no key at all, so a fabricated one buys a
   misleading failure rather than a test.
 - **Nothing renders the numbers** at the far end yet, so the gate has no
   enforcement in the one place a reader would actually meet it.
+- **Key use is not recorded in the far end's running deployment.** Committed,
+  not deployed. Until it is, `last_used_at` stays null whatever this side
+  does.

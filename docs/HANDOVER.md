@@ -32,16 +32,28 @@ Everything below was verified against the live deployment, not just built:
 | Results charts and the publication gate | rendered and inspected in a browser; the gate fires on the test poll |
 | Question-set templates | four sets on the Setup tab, previewed on a throwaway poll |
 | Option rotation | 400-rotation test: scales only reverse, unordered options average dead centre, terminal options never move |
-| Campaign delivery, payload side | `npm run check:delivery` — 31 checks, three of them the built payload run through Politracker's own `parseDelivery` |
+| Campaign delivery, payload side | `npm run check:delivery` — 33 checks, three of them the built payload run through Politracker's own `parseDelivery` |
+| `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
+| Worker carrying the sender | deployed, version `77771423-353d-4c8d-82c5-4535aaddffc7`, 2.13 MB gzipped; `/` and `/admin/login` render, `/admin/polls` redirects rather than erroring |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
 Telegram message will do it; `/start` and `/whoami` return before the model is
 called.
 
-**Also not yet exercised:** campaign delivery has never made a request.
+**Also not yet exercised:** campaign delivery has never made a request. The
+code is deployed and the table exists, but `poll_feed` is absent and there is
+no `POLITRACKER_FEED_TOKEN`, so the button is disabled and the feed is off.
 `POST /v1/poll-results` does answer in production at the receiving end (an
 unknown key gets a 401, not a 500, so its tables really are reachable there).
+
+**Not verified, and one click settles it:** the delivery panel has never been
+rendered by the deployed Worker, because it sits behind admin auth. The query
+it runs is valid against the live schema and the page's siblings render, but
+the `missing Int[]` column and the `PollDeliveryStatus` enum have not been
+read by the WASM client on workerd — only by the Node client from this
+machine. Open a poll's Results tab; the panel should appear saying which of
+the three prerequisites is missing.
 Migration `20261102223000_poll_delivery` is written but **not applied**, no
 `POLITRACKER_FEED_TOKEN` exists — the receiving end issues it and an invented
 one gets a flat 401 — and the `poll_feed` platform setting is absent, so the
@@ -103,10 +115,11 @@ the `NEON_*` names the cloud environment used.
    pre-rotation wave against a post-rotation one without saying so — the first
    option in each list will appear to lose a couple of points when nothing
    moved.
-5. **Turn on campaign delivery**, in this order: apply
-   `20261102223000_poll_delivery`; ask the Politracker end to issue a feed key
-   for the campaign; put it in `POLITRACKER_FEED_TOKEN` as a Worker secret;
-   set `poll_feed` to `{ "enabled": true, "endpointUrl": "..." }`. Then check
+5. **Turn on campaign delivery.** The migration is applied and the Worker is
+   deployed, so what remains is the credential and the switch: get the feed
+   key from the Politracker end, put it in `POLITRACKER_FEED_TOKEN` as a
+   Worker secret, and set `poll_feed` to
+   `{ "enabled": true, "endpointUrl": "..." }`. Then check
    the sequence on the first delivery, not just the 202 — a `200
    already_stored` means the id was already held, which on a first delivery
    would mean something is wrong.
@@ -121,6 +134,18 @@ the `NEON_*` names the cloud environment used.
    plain words that it is a test and not fieldwork. That is permanent too, but
    it is permanently honest, and the receiver stores the blocker alongside the
    figure.
+
+   A key already exists at the far end, unused: campaign `STERLING`, scope
+   `poll_results`. It has deliberately not been handed over, and whether to
+   use it or have a fresh one issued for a different campaign is still open.
+   `STERLING` has one seat and thirteen electors, so it is plainly not a live
+   operation — which is the point, given a delivery cannot be deleted.
+
+   Do not expect `last_used_at` to tell you anything yet: the far end's
+   use-recording is committed but not deployed. When it is, it means "this key
+   reached the endpoint" — it is written before the payload is parsed, so a
+   422 counts. For deliveries that actually landed, count `ACCEPTED` rows in
+   `PollDelivery` here.
 6. **Delete the test poll** `TEST — Cayman Pulse (safe to delete)` when done.
    The `Cayman Life` poll beside it is the user's; leave it alone.
 7. **`{{agent_name}}`** now appears in the live greeting and Role line. The
