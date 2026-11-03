@@ -336,6 +336,20 @@ export function buildDelivery(input: BuildInput): BuildResult {
     // The same reasoning as the headline gate, applied to this question's own
     // base. A question only half the sample reached does not inherit a clean
     // bill of health from the topline.
+    //
+    // **`input.blockers.length === 0` is load-bearing and looks redundant.**
+    // It is what guarantees this side never emits a quotable question inside
+    // an unquotable delivery. The receiving end composes the levels
+    // conjunctively — a parent that withholds cannot be reinstated by a child
+    // — so a payload that contradicted itself would not be refused, it would
+    // be silently resolved their way, and the contradiction would live only
+    // in what we believed we had sent.
+    //
+    // It matters most for the test marking, which sits at the delivery level:
+    // drop this conjunct and a delivery marked as a trial could carry a
+    // question marked publishable. `scripts/check-delivery.ts` asserts it, so
+    // removing it fails there — but a simplification that looks obviously safe
+    // deserves the reason beside it and not only a failing check afterwards.
     const perQuestion =
       tally.total < input.answered
         ? {

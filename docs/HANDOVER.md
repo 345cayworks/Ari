@@ -605,6 +605,25 @@ against it:
    broken by their absence — but the receiving end would prefer them, and a
    campaign that cannot see a district at all will ask for it by other means.
 
+### Put an invariant beside the code that can break it
+
+Theirs, and narrower than "remember your own rules" — which is why it is
+actionable. Their rule that a sequence is consumed only on a 2xx lived in a
+document, in prose, one section from the migration that contradicted it, and
+nothing in the migration pointed at it. `0018` cites the rule; `0017` did not.
+
+Applied here, one instance found. `input.blockers.length === 0` in the
+per-question gate is what guarantees this side never emits a quotable question
+inside an unquotable delivery — and it looks redundant, because a thin
+question would get its own blockers anyway. The invariant was in the contract
+and pinned in `check-delivery.ts`, and the line enforcing it said nothing. A
+simplification that looks obviously safe deserves the reason beside it, not
+only a failing check afterwards.
+
+Worth keeping the limit in view: this does not solve having written a rule and
+not having it to hand when writing the next thing. Neither side has a
+mechanism for that, and both have said so rather than claiming otherwise.
+
 ### The tell for a claim about your own record
 
 Every failure between the two sides today was a claim about code or about the
