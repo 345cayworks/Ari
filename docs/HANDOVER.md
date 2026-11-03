@@ -292,6 +292,16 @@ Three things worth knowing before changing any of it:
    marked refused — which is how a gap gets reported that was never a gap. It
    is recorded as DUPLICATE, not FAILED, because a FAILED row offers "send it
    again unchanged" and that would re-send into a permanently spent number.
+
+   **This handling targets their committed code, not their running code.**
+   Their deployed Worker still answers a taken sequence with `500
+   internal_error`, which falls through to FAILED here and so offers exactly
+   the wrong repair. It is rare — a conflict needs a delivery that landed but
+   was recorded here as refused — and unreachable on a first delivery, since
+   no sequence is taken yet. But it is the reason the two redeploys are
+   ordered before any delivery rather than merely advisable, and the reason
+   not to read a 500 from them as a fault of theirs until both sides are on
+   current builds.
 5. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type
    carries the shape and the limits already cover it, so a crosstab engine has
