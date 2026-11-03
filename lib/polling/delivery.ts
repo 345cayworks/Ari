@@ -73,6 +73,23 @@ export interface Publication {
   blockers: string[];
 }
 
+/**
+ * One answer's figures.
+ *
+ * **No valence field, deliberately.** This side can tell a favourable answer
+ * from an unfavourable one — `isOrderedScale` and the positive/negative lists
+ * in `rotation.ts` exist precisely to do that, and rotation depends on it —
+ * and none of it is transmitted. The receiving end therefore colours every bar
+ * one hue rather than diverging, because inferring direction from free-text
+ * labels would be it inventing meaning it cannot know.
+ *
+ * So do not add a valence, sentiment or direction field here as a convenience.
+ * Their allowlist refuses an unknown key at this level and
+ * `scripts/check-delivery.ts` would fail against their real parser, but those
+ * stop it rather than explain it. If diverging colour is ever actually wanted,
+ * it is a change to the contract agreed at both ends, not a field slipped in
+ * because this side happens to know.
+ */
 export interface DeliveryAnswer {
   answer: string;
   /** Unweighted respondents giving this answer. The honest base. */
