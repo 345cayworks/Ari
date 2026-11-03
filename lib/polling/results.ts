@@ -7,6 +7,14 @@ export const MAX_CALLS_PER_SUBMIT = 20;
 // sent in parallel, which keeps the server action well inside its time limit.
 export const MAX_BATCH_NUMBERS = 5000;
 
+// Live respondents a single sampling-frame draw may be asked for. The frame
+// oversamples this against its measured assignment rate — near seven in ten
+// Cayman mobile numbers are unassigned — so 1,200 asked for is already around
+// 4,000 numbers, and MAX_BATCH_NUMBERS is the hard ceiling behind it. Set here
+// rather than guessed at the form, so the limit and the batch limit it has to
+// respect sit together.
+export const MAX_TARGET_LIVE = 1200;
+
 export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
 
 export function minutesToTime(m: number): string {

@@ -31,6 +31,7 @@ import {
   createBatch,
   placeCalls,
   reconcileCalls,
+  reportFrameDispositions,
   resolveCallback,
   setPollStatus,
   updatePoll,
@@ -39,6 +40,7 @@ import { Banner } from "../banner";
 import { StatusBadge } from "../status-badge";
 import { WeightingTab } from "./weighting-tab";
 import { DeliveryPanel } from "./delivery-panel";
+import { RddPanel } from "./rdd-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -382,6 +384,40 @@ async function CallsTab({
         </Banner>
       )}
 
+      {searchParams.drawn !== undefined && (
+        <Banner tone={searchParams.error ? "error" : "ok"}>
+          {Number(searchParams.drawn).toLocaleString()} number(s) drawn from the sampling frame,{" "}
+          {Number(searchParams.drawSubmitted).toLocaleString()} queued for dialling
+          {Number(searchParams.drawDnc) ? `, ${searchParams.drawDnc} skipped (do not call)` : ""}
+          {Number(searchParams.drawCalled) ? `, ${searchParams.drawCalled} skipped (already called)` : ""}
+          {/* A drawn number this platform refuses to dial is worth naming: the
+              frame's output is valid E.164 by construction, so a non-zero
+              count here means the frame changed shape, not that an operator
+              mistyped something. */}
+          {Number(searchParams.drawInvalid)
+            ? `, ${searchParams.drawInvalid} rejected by the format gate`
+            : ""}
+          {Number(searchParams.drawShortfall)
+            ? `. The frame was ${Number(searchParams.drawShortfall).toLocaleString()} short of the oversample it wanted, so this draw is smaller than asked for`
+            : ""}
+          .
+        </Banner>
+      )}
+
+      {searchParams.reportedDead !== undefined && (
+        <Banner tone={searchParams.error ? "error" : "ok"}>
+          Reported to the frame: {Number(searchParams.reportedDead).toLocaleString()} number(s) that
+          do not exist, {Number(searchParams.reportedLive).toLocaleString()} that do
+          {Number(searchParams.reportedWaiting)
+            ? `. ${Number(searchParams.reportedWaiting).toLocaleString()} not yet decided — their calls have not finished`
+            : ""}
+          {Number(searchParams.reportedRemaining)
+            ? `. ${Number(searchParams.reportedRemaining).toLocaleString()} still to send; press again to continue`
+            : ""}
+          .
+        </Banner>
+      )}
+
       {searchParams.reconciled !== undefined && (
         <Banner tone="ok">
           {Number(searchParams.reconciled)
@@ -412,6 +448,8 @@ async function CallsTab({
           Check now
         </button>
       </form>
+
+      <RddPanel poll={poll} />
 
       <form key={`b${searchParams.batch}`} action={createBatch} className="card space-y-5">
         <input type="hidden" name="pollId" value={poll.id} />
@@ -530,6 +568,53 @@ async function CallsTab({
                         {p.calls.toLocaleString()} of {b.submittedCount.toLocaleString()} dialled ·{" "}
                         {p.completed.toLocaleString()} completed
                       </p>
+                    </div>
+                  )}
+                  {/* Provenance, on the row rather than in a detail view: a
+                      published margin of error rests on this distinction, and
+                      a reader of this page should not have to remember which
+                      batches were drawn and which were pasted in. */}
+                  {b.rddSampleId !== null && (
+                    <div className="space-y-2 rounded-xl bg-sand-warm/50 px-4 py-3">
+                      <p className="text-xs text-ink/60">
+                        Random sample from the frame
+                        {b.rddTargetLive === null ? "" : ` · ${b.rddTargetLive.toLocaleString()} live respondents asked for`}
+                        {b.rddAssignmentRate === null
+                          ? ""
+                          : ` · oversampled at a ${Math.round(b.rddAssignmentRate * 100)}% assignment rate`}
+                        {b.rddShortfall ? ` · ${b.rddShortfall.toLocaleString()} short of the oversample` : ""}
+                        {b.rddSeed === null ? "" : <> · seed <code>{b.rddSeed}</code></>}
+                        {" · sample "}
+                        <code className="break-all">{b.rddSampleId}</code>
+                      </p>
+                      {operatorMixOf(b.rddOperatorMix) !== null && (
+                        <p className="text-xs text-ink/50">
+                          Operators drawn: {operatorMixOf(b.rddOperatorMix)}
+                        </p>
+                      )}
+                      <form action={reportFrameDispositions} className="flex flex-wrap items-center gap-3">
+                        <input type="hidden" name="pollId" value={poll.id} />
+                        <input type="hidden" name="batchId" value={b.id} />
+                        <button type="submit" className="btn-secondary">
+                          {b.rddReportedAt === null ? "Report dead numbers to the frame" : "Report again"}
+                        </button>
+                        <span className="text-xs text-ink/50">
+                          {b.rddReportedAt === null ? (
+                            <>
+                              Tells the frame which of these numbers do not exist, so they are
+                              never drawn again — and which do, so its assignment rate stays
+                              honest. Nothing about any answer is sent.
+                            </>
+                          ) : (
+                            <>
+                              {b.rddReportedUnassigned.toLocaleString()} dead and{" "}
+                              {b.rddReportedLive.toLocaleString()} live reported,{" "}
+                              {formatRelative(b.rddReportedAt)}. Safe to run again once more calls
+                              have finished.
+                            </>
+                          )}
+                        </span>
+                      </form>
                     </div>
                   )}
                   {b.error && <p className="text-xs text-accent-deep">{b.error}</p>}
@@ -836,6 +921,24 @@ function SetupTab({
 }
 
 // --- Bits --------------------------------------------------------
+
+/**
+ * The batch-level operator counts, as a sentence.
+ *
+ * An aggregate and nothing else — the frame was verified uniform across all
+ * four Cayman operators, and this is how a draw is checked against that after
+ * the fact. No per-number carrier is stored anywhere: in a jurisdiction this
+ * small, a carrier attribute sitting beside a respondent's answers is a
+ * quasi-identifier.
+ */
+function operatorMixOf(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, n]) => typeof n === "number" && n > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+  if (entries.length === 0) return null;
+  return entries.map(([name, n]) => `${name} ${Number(n).toLocaleString()}`).join(", ");
+}
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }): JSX.Element {
   return (
