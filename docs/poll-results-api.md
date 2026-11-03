@@ -371,8 +371,10 @@ new.
 
 **Which code a wrong refusal produces depends on a choice the table above does
 not make for you.** A corrected re-send may reuse the original `delivery_id` or
-mint a fresh one — the receiver accepts either, since only the sequence is
-constrained — but the two surface the same fault differently:
+mint a fresh one. The receiver accepts either, but **both fields are
+constrained** — `unique (campaign_id, delivery_id)` and
+`unique (campaign_id, sequence)` — and which one decides is what makes the two
+surface the same fault differently:
 
 | Corrected re-send uses | A refusal record that was wrong answers | Because |
 | --- | --- | --- |
@@ -388,6 +390,16 @@ harden the re-send path. So the case to expect is the `200`, and `409` is left
 for the one it cannot cover: a sequence the receiver holds under a
 `delivery_id` the provider has no record of at all, where `held_by` is the only
 thing that would let anyone work out what happened.
+
+**Reusing the id is safe because of the `delivery_id` constraint, not merely
+permitted despite it.** What produces the `200` is an explicit lookup on
+`delivery_id` before anything is written; the unique index is the backstop that
+holds that lookup under concurrency. Were the field unconstrained, a reused id
+arriving twice at once would pass both lookups and write two rows — the same
+poll delivered under two sequences, which is the quiet restatement both ends
+are append-only to prevent. Any provider reusing ids is depending on that
+index, so a schema change that dropped it would break this strategy silently
+rather than loudly.
 
 ### A lost delivery leaves a permanent gap
 
