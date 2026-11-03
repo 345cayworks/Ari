@@ -34,7 +34,8 @@ Everything below was verified against the live deployment, not just built:
 | Option rotation | 400-rotation test: scales only reverse, unordered options average dead centre, terminal options never move |
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
-| Worker carrying the sender | deployed, version `5ad0790d-f11a-4dc7-82fd-18cd407b075b`, 2.13 MB gzipped, test marking confirmed present in the bundle; `/` and `/admin/login` render, `/admin/polls` and `/admin/settings` redirect rather than erroring |
+| `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
+| Worker carrying the sender | deployed, version `e543ba7a-83ad-4448-aebc-9bf69b4f4890`, 2.14 MB gzipped; test marking and the Settings key form both confirmed present in the bundle; `/` and `/admin/login` render, `/admin/polls` and `/admin/settings` redirect rather than erroring |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
