@@ -32,9 +32,9 @@ Everything below was verified against the live deployment, not just built:
 | Results charts and the publication gate | rendered and inspected in a browser; the gate fires on the test poll |
 | Question-set templates | four sets on the Setup tab, previewed on a throwaway poll |
 | Option rotation | 400-rotation test: scales only reverse, unordered options average dead centre, terminal options never move |
-| Campaign delivery, payload side | `npm run check:delivery` — 33 checks, three of them the built payload run through Politracker's own `parseDelivery` |
+| Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
-| Worker carrying the sender | deployed, version `77771423-353d-4c8d-82c5-4535aaddffc7`, 2.13 MB gzipped; `/` and `/admin/login` render, `/admin/polls` redirects rather than erroring |
+| Worker carrying the sender | deployed, version `b138af8f-655e-449a-9761-11a359139441`, 2.13 MB gzipped; `/` and `/admin/login` render, `/admin/polls` redirects rather than erroring |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -276,6 +276,15 @@ Three things worth knowing before changing any of it:
    Run that after any change to either end's field set. It already earned its
    keep: it caught the builder emitting a `with_a_view` base larger than the
    sample that answered at all.
+
+   It also pins all seven size limits against their parser from both
+   directions — a payload at each limit must be accepted by both, one past it
+   must be refused by theirs. One direction alone proves nothing: if ours were
+   stricter, deliveries would be refused here that they would have taken, and
+   if ours were looser a delivery would pass locally and be refused on the
+   wire. They had checked the seven by eye and reported agreement, which is a
+   prose claim about code — the thing that has gone wrong repeatedly here — so
+   it is a check now instead.
 3. **A refusal consumes no sequence; a failure might have.** A sequence is
    spent if and only if the far end answered 2xx — a 401 or 403 returns before
    the payload is read and a 422 before it is stored. So a `REFUSED` row is
@@ -293,22 +302,17 @@ Three things worth knowing before changing any of it:
    is recorded as DUPLICATE, not FAILED, because a FAILED row offers "send it
    again unchanged" and that would re-send into a permanently spent number.
 
-   **This handling targets their committed code, not their running code.**
-   Their deployed build has no conflict handling on the feed path at all —
-   verified by grepping it, not by asking — so it answers a unique violation
-   with `500 internal_error`. That falls through to FAILED here and offers
-   exactly the wrong repair. The running build differs in two ways, both
-   unreachable without a token: no `last_used_at`, and that 500 where a 409
-   belongs.
+   **Both sides are now on current builds, so the 409 is live rather than
+   aspirational.** They report deploying version `ff4605b8`, which carries the
+   409 and the key-use recording — that is their report, not observable from
+   here: both need a real feed key to exercise and no key has been issued.
+   What is observable is that their endpoint answers 401 for an unknown key
+   rather than 500, so the feed-key lookup executes in production.
 
-   A self-naming 409 — `held_by` pointing at the delivery being answered — is
-   **not** reachable from any of their builds, and `send` deliberately does
-   not handle it. See the comment there; the short version is that the one
-   build which could emit it ships its own fix in the same deploy.
+   Until a delivery has actually been made, treat a 500 from them as
+   diagnosable rather than impossible — the conflict path has never run with
+   a credential at either end.
 
-   This is the reason the two redeploys are ordered before any delivery
-   rather than merely advisable, and the reason not to read a 500 from them
-   as a fault of theirs until both sides are on current builds.
 5. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type
    carries the shape and the limits already cover it, so a crosstab engine has

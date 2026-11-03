@@ -20,7 +20,14 @@
  * Without `--parser` the structural checks below still run, so this is worth
  * having in CI either way; it simply cannot prove the copy is still faithful.
  */
-import { buildDelivery, LIMITS, type BuildInput, type DeliveryBreakdown } from "../lib/polling/delivery";
+import {
+  buildDelivery,
+  LIMITS,
+  type BuildInput,
+  type DeliveryAnswer,
+  type DeliveryBreakdown,
+  type DeliveryPayload,
+} from "../lib/polling/delivery";
 import type { Tally } from "../lib/polling/results";
 import type { WeightingResult } from "../lib/polling/weighting";
 
@@ -219,6 +226,158 @@ if (parserFlag === -1 || process.argv[parserFlag + 1] === undefined) {
     }
     const parsed = parseDelivery(JSON.parse(JSON.stringify(built.payload)));
     check(`${label} is accepted`, parsed.ok, parsed.ok ? undefined : parsed.reason);
+  }
+
+  // --- Do our limits equal theirs? ---------------------------------------
+  //
+  // LIMITS is a hand copy of their parser's, because there is no shared
+  // package between two repositories. The other side checked by eye that all
+  // seven agree and reported that they do. That is a claim in prose about
+  // code, which is the exact thing that has gone wrong repeatedly here — so
+  // it is checked instead.
+  //
+  // Each limit is pinned from both directions, because one direction alone
+  // proves nothing useful. A payload AT the limit must be accepted by both:
+  // if ours were stricter, deliveries would be refused here that they would
+  // have taken. A payload OVER it must be refused by both: if ours were
+  // looser, a delivery would pass our check and be refused on the wire,
+  // which is the silent mismatch that would be hardest to diagnose.
+  //
+  // The over-limit payloads are built valid and then mutated past the limit,
+  // because our own builder refuses to produce them — which is the point of
+  // it, and also why it cannot be the thing that tests their end.
+  const answer = (n: number, label = "A"): DeliveryAnswer => ({
+    answer: label,
+    n,
+    pct_all: 0.5,
+    pct_with_a_view: 0.5,
+    moe: 1,
+  });
+  const breakdown = (rows: number): DeliveryBreakdown => ({
+    by: "district",
+    question_id: "Q1",
+    rows: Array.from({ length: rows }, (_, i) => ({
+      group: `G${i}`,
+      n: 10,
+      quotable: true,
+      blockers: [],
+      answers: [answer(5)],
+    })),
+  });
+  const spread = (count: number, each: number): Tally["answers"] =>
+    Array.from({ length: count }, (_, i) => ({
+      answer: `A${i}`,
+      count: each,
+      weight: each,
+    }));
+
+  const limitCases: {
+    name: string;
+    limit: number;
+    at: () => ReturnType<typeof buildDelivery>;
+    over: (p: DeliveryPayload, n: number) => void;
+  }[] = [
+    {
+      name: `question text (${LIMITS.text})`,
+      limit: LIMITS.text,
+      at: () => buildDelivery(input({ tallies: [tally({ text: "x".repeat(LIMITS.text) })] })),
+      over: (p, n) => {
+        p.questions[0]!.text = "x".repeat(n);
+      },
+    },
+    {
+      name: `answer label (${LIMITS.label})`,
+      limit: LIMITS.label,
+      at: () =>
+        buildDelivery(
+          input({ tallies: [tally({ answers: [{ answer: "y".repeat(LIMITS.label), count: 612, weight: 612 }] })] }),
+        ),
+      over: (p, n) => {
+        p.questions[0]!.answers[0]!.answer = "y".repeat(n);
+      },
+    },
+    {
+      name: `questions (${LIMITS.questions})`,
+      limit: LIMITS.questions,
+      at: () =>
+        buildDelivery(
+          input({
+            tallies: Array.from({ length: LIMITS.questions }, (_, i) => tally({ questionId: `Q${i}` })),
+          }),
+        ),
+      over: (p, n) => {
+        const q = p.questions[0]!;
+        p.questions = Array.from({ length: n }, (_, i) => ({ ...q, id: `Q${i}` }));
+      },
+    },
+    {
+      name: `answers per question (${LIMITS.answers})`,
+      limit: LIMITS.answers,
+      at: () =>
+        buildDelivery(
+          input({
+            tallies: [tally({ total: LIMITS.answers * 10, totalWeight: LIMITS.answers * 10, answers: spread(LIMITS.answers, 10) })],
+          }),
+        ),
+      over: (p, n) => {
+        p.questions[0]!.base = { all: n * 10, with_a_view: n * 10 };
+        p.questions[0]!.answers = Array.from({ length: n }, (_, i) => answer(1, `A${i}`));
+      },
+    },
+    {
+      name: `breakdowns (${LIMITS.breakdowns})`,
+      limit: LIMITS.breakdowns,
+      at: () =>
+        buildDelivery(input({ breakdowns: Array.from({ length: LIMITS.breakdowns }, () => breakdown(1)) })),
+      over: (p, n) => {
+        p.breakdowns = Array.from({ length: n }, () => breakdown(1));
+      },
+    },
+    {
+      name: `rows per breakdown (${LIMITS.rows})`,
+      limit: LIMITS.rows,
+      at: () => buildDelivery(input({ breakdowns: [breakdown(LIMITS.rows)] })),
+      over: (p, n) => {
+        p.breakdowns = [breakdown(n)];
+      },
+    },
+    {
+      name: `blockers (${LIMITS.blockers})`,
+      limit: LIMITS.blockers,
+      at: () =>
+        buildDelivery(input({ blockers: Array.from({ length: LIMITS.blockers }, (_, i) => `Blocker ${i}.`) })),
+      over: (p, n) => {
+        p.publication = {
+          quotable: false,
+          blockers: Array.from({ length: n }, (_, i) => `Blocker ${i}.`),
+        };
+      },
+    },
+  ];
+
+  console.log("");
+  console.log("  Limit agreement, pinned from both directions");
+  for (const c of limitCases) {
+    const built = c.at();
+    if (!built.ok) {
+      check(`${c.name} — at the limit, ours accepts`, false, built.problems.join("; "));
+    } else {
+      const parsed = parseDelivery(JSON.parse(JSON.stringify(built.payload)));
+      check(
+        `${c.name} — at the limit, both accept`,
+        parsed.ok,
+        parsed.ok ? undefined : `theirs refused: ${parsed.reason}`,
+      );
+
+      const mutated = JSON.parse(JSON.stringify(built.payload)) as DeliveryPayload;
+      c.over(mutated, c.limit + 1);
+      const refused = parseDelivery(mutated);
+      check(
+        `${c.name} — one over, theirs refuses`,
+        !refused.ok,
+        refused.ok ? "theirs ACCEPTED a payload past our limit — ours is stricter than theirs" : undefined,
+      );
+    }
   }
 }
 
