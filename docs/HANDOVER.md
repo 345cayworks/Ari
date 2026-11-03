@@ -918,9 +918,13 @@ counts the distinct values the mapping can emit and fails if it is not two.
    list, one line at that end, and nothing changes here. Settings stays a
    `<select>` over the allowlist, not a text box, so a later operator still
    cannot type `completed` into it. **Do not run a real wave first:** the live
-   half would be rejected per number and the frame would resolve only
-   disconnected numbers, dragging the assignment rate it measures (and
-   oversamples against) toward zero.
+   half would be rejected per number, and while the rate does not collapse
+   (the worker short-circuits to its 0.28 estimate when no live number has
+   resolved), every disconnected number is written to `liveness = 'dead'`
+   permanently while its live neighbours are recorded nowhere. The first
+   measured rate afterwards is then biased low, which oversamples the next
+   draw. An earlier version of this note said the rate is dragged toward zero;
+   that was asserted without reading the worker, and is wrong.
 2. The write-back refuses to run if more than 95% of a batch failed to dial.
    `dial_failed` is also what a dead SIP trunk looks like, and a batch reported
    wholesale as disconnected would permanently burn live numbers out of a

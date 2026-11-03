@@ -277,14 +277,19 @@ buys a poll.
   a refusal, `no_answer` for a completed interview) or disclosing the outcome,
   and the contract forbids both. Nothing changes on this side.
 
-  **Do not run a real wave until the worker takes it.** The live half is
-  rejected per number, so the frame would resolve only disconnected numbers —
-  worse than learning nothing. `GET /api/stats` reports an assignment rate it
-  measures from resolved numbers once 100 or more exist ("Using the 0.28
-  starting estimate; only 0 numbers have been resolved by dialling so far
-  (needs 100+ to measure)"). A resolution set that is entirely disconnected
-  drives that measured rate toward zero, and the oversample for the next draw
-  is computed against it.
+  **Do not run a real wave until the worker takes it**, and the reason is not
+  the one first written here. The worker computes the rate as
+  `live / (live + dead)` over `numbers.liveness`, guarded by
+  `if (basis < 100 || live === 0) return 0.28`. So a resolution set that is
+  entirely disconnected does **not** drag the rate to zero — `live === 0`
+  short-circuits to the starting estimate, and the rate simply never becomes
+  `observed`. The damage is quieter and permanent: every disconnected number
+  from that wave is written to `numbers.liveness = 'dead'` for good, while the
+  live numbers dialled alongside them are rejected and recorded nowhere. When
+  `live` is finally accepted and the rate does start measuring, those orphaned
+  dead numbers remain in the denominator with no live counterweight, so the
+  first observed rate is biased low — and a rate that is too low makes the next
+  oversample too large.
 - The draw is capped at `MAX_TARGET_LIVE` (1,200) live respondents, because the
   oversample behind that is already around 4,000 numbers and
   `MAX_BATCH_NUMBERS` is 5,000.
