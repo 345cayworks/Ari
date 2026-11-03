@@ -294,14 +294,22 @@ Three things worth knowing before changing any of it:
    again unchanged" and that would re-send into a permanently spent number.
 
    **This handling targets their committed code, not their running code.**
-   Their deployed Worker still answers a taken sequence with `500
-   internal_error`, which falls through to FAILED here and so offers exactly
-   the wrong repair. It is rare — a conflict needs a delivery that landed but
-   was recorded here as refused — and unreachable on a first delivery, since
-   no sequence is taken yet. But it is the reason the two redeploys are
-   ordered before any delivery rather than merely advisable, and the reason
-   not to read a 500 from them as a fault of theirs until both sides are on
-   current builds.
+   Their deployed Worker differs in three ways, all unreachable without a
+   token, and two of them are on the conflict path — so it is least
+   trustworthy in exactly the situation where you would be reconciling:
+
+   - it never writes `last_used_at`;
+   - it answers a taken sequence with `500 internal_error`, which falls
+     through to FAILED here and so offers exactly the wrong repair;
+   - on a concurrent duplicate — a retry fired while the original is still in
+     flight — it resolves the sequence before the delivery id, so it answers
+     409 naming *this* delivery as the holder. `send` reads that as what it
+     is (the delivery is stored, recorded ACCEPTED) rather than as a
+     conflict, which is why that case is handled here and not merely noted.
+
+   This is the reason the two redeploys are ordered before any delivery
+   rather than merely advisable, and the reason not to read a 500 from them
+   as a fault of theirs until both sides are on current builds.
 5. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type
    carries the shape and the limits already cover it, so a crosstab engine has

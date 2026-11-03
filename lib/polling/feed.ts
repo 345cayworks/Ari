@@ -447,6 +447,31 @@ async function send(
   // logs.
   if (res.status === 409) {
     const heldBy = typeof body.held_by === "string" ? body.held_by : null;
+
+    // The far end naming *this* delivery as the holder is not a conflict at
+    // all: it is saying the sequence is taken by the request being answered,
+    // which means this delivery is stored. Recording it as anything other
+    // than delivered would leave a landed delivery looking unlanded, and that
+    // is the state that gets reported as a gap.
+    //
+    // It arises from a concurrent duplicate — a retry fired while the
+    // original was still in flight — against a receiver that resolves the
+    // sequence before the delivery id. Theirs no longer does; the build
+    // currently deployed still does, so this is reachable today rather than
+    // hypothetical. Either way the truthful reading does not depend on which
+    // of us is at fault.
+    if (heldBy !== null && heldBy === id) {
+      const detail = `The far end reports sequence #${payload.sequence} is held by this delivery, so it is stored. Its answer arrived as a conflict rather than an acceptance, which an older build does on a concurrent duplicate.`;
+      await record({
+        status: "ACCEPTED",
+        httpStatus: 409,
+        sentAt: new Date(),
+        detail,
+        missing,
+      });
+      return { ok: true, status: "already_stored", id, sequence: payload.sequence, missing };
+    }
+
     const detail =
       `Sequence #${payload.sequence} is already held at the far end` +
       (heldBy === null ? "" : ` by delivery ${heldBy}`) +
@@ -455,7 +480,7 @@ async function send(
     // Put the record straight. The far end is authoritative about what it
     // holds, and leaving a landed delivery marked refused is how a gap gets
     // reported that was never a gap.
-    if (heldBy !== null && heldBy !== id) {
+    if (heldBy !== null) {
       await prisma.pollDelivery
         .update({
           where: { id: heldBy },
