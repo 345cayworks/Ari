@@ -132,12 +132,20 @@ the `NEON_*` names the cloud environment used.
    pre-rotation wave against a post-rotation one without saying so — the first
    option in each list will appear to lose a couple of points when nothing
    moved.
-5. **Turn on campaign delivery.** Migration applied, Worker deployed, and
-   `poll_feed` is set to
-   `{ "enabled": true, "endpointUrl": "https://politracker.cayworks.net/v1/poll-results" }`
-   — that hostname checked against their wrangler routes, not assumed; their
-   README names two custom domains and the other is the API's older one. So
-   the only thing still missing is the credential:
+5. **Turn on campaign delivery, in this order — the order is the safety.**
+
+   `poll_feed` exists with the right endpoint
+   (`https://politracker.cayworks.net/v1/poll-results`, checked against their
+   wrangler routes rather than assumed; their README names two custom domains
+   and the other is the API's older one) but is **`enabled: false`**, on
+   purpose. The deployed Worker predates the test-delivery marking, so its
+   panel offers only the unmarked "Deliver these results". Enabling the feed
+   and installing a token against that build would make an unmarked permanent
+   delivery the only available action. Off is the gate that does not depend on
+   anybody remembering the ordering.
+
+   So: **deploy first**, then flip `poll_feed.enabled` to true, then install
+   the credential:
 
    ```
    npx wrangler secret put POLITRACKER_FEED_TOKEN
