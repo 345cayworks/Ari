@@ -384,11 +384,26 @@ export const DISPOSITION_UNASSIGNED = "disconnected";
  * that was engaged, a number that refused and a number that completed the
  * whole questionnaire all send this.
  *
- * NOT CONFIRMED AGAINST THE WORKER. The frame's accepted disposition
- * vocabulary was not readable when this was written — only "disconnected" was
- * documented — so if the worker rejects this value the write-back will report
- * it as a rejection per number rather than failing silently, and the value can
- * be corrected on the Settings page. Confirm it before the first real run.
+ * CONFIRMED REJECTED BY THE WORKER, 2026-11-03. Probed with a deliberately
+ * invalid value, which the worker refuses with 400 and an enumeration:
+ *
+ *   {"error":"Invalid disposition","allowed":["not_attempted","complete",
+ *    "refused","partial","no_answer","busy","voicemail","callback",
+ *    "disconnected","ineligible","language_barrier"]}
+ *
+ * So "disconnected" is accepted and the unassigned half is sound. No value on
+ * `LIVE_DISPOSITIONS` is accepted, and every accepted value other than
+ * "disconnected" and "not_attempted" names an outcome — four of them
+ * ("complete", "refused", "no_answer", "voicemail") are among the strings
+ * `scripts/check-rdd.ts` asserts can never reach this allowlist.
+ *
+ * The fix belongs at the far end: add "live" to the worker's accepted list.
+ * Substituting one of its existing values would mean either lying ("complete"
+ * for a refusal, "no_answer" for an eight-minute interview) or disclosing the
+ * outcome, and the contract above forbids both. Until the worker accepts it,
+ * the live half of every write-back is rejected per number — see the
+ * operational note in `docs/rdd-sampling-frame.md` for why that is worse than
+ * the frame simply learning nothing.
  */
 export const DISPOSITION_LIVE_DEFAULT = "live";
 

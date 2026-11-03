@@ -908,12 +908,19 @@ counts the distinct values the mapping can emit and fails if it is not two.
 
 **Two things to know before the first real run.**
 
-1. The live disposition value is **unconfirmed against the worker**. Only
-   `disconnected` was documented when this was built, so `live` is a guess. If
-   the frame rejects it the write-back reports the rejection per number rather
-   than failing silently, and the value can be changed on Settings — it is a
-   `<select>` over an allowlist, not a text box, so a later operator cannot
-   type `completed` into it.
+1. The live disposition value is **confirmed rejected by the worker**, probed
+   2026-11-03: it answers 400 `{"error":"Invalid disposition","allowed":[...]}`
+   listing `not_attempted, complete, refused, partial, no_answer, busy,
+   voicemail, callback, disconnected, ineligible, language_barrier`.
+   `disconnected` is accepted, so the unassigned half is sound; no live value
+   this side allows is. Every other accepted value names an outcome, so there
+   is nothing to substitute — the fix is to add `live` to the **worker's**
+   list, one line at that end, and nothing changes here. Settings stays a
+   `<select>` over the allowlist, not a text box, so a later operator still
+   cannot type `completed` into it. **Do not run a real wave first:** the live
+   half would be rejected per number and the frame would resolve only
+   disconnected numbers, dragging the assignment rate it measures (and
+   oversamples against) toward zero.
 2. The write-back refuses to run if more than 95% of a batch failed to dial.
    `dial_failed` is also what a dead SIP trunk looks like, and a batch reported
    wholesale as disconnected would permanently burn live numbers out of a

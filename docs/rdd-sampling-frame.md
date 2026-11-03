@@ -251,7 +251,7 @@ buys a poll.
 | `app/admin/polls/[id]/rdd-panel.tsx` | The draw form on the Calls tab |
 | `app/admin/polls/actions.ts` | `drawRddSample`, `reportFrameDispositions` |
 | `app/admin/settings/page.tsx` | Frame URL, sealed key, live-disposition value |
-| `scripts/check-rdd.ts` | `npm run check:rdd` — 43 assertions, including the one that holds the payload shut |
+| `scripts/check-rdd.ts` | `npm run check:rdd` — 41 assertions, including the one that holds the payload shut |
 
 ## Operational notes
 
@@ -259,11 +259,32 @@ buys a poll.
   same as a campaign feed key. Recoverable — paste it again — but not obvious.
   It also breaks every `phoneHash` already recorded, which is why the handover
   says it can never change now that poll calls exist.
-- The live disposition value is **not confirmed against the worker**. Only
-  `disconnected` was documented when this was built. If the frame rejects it,
-  the write-back reports the rejection per number rather than failing silently,
-  and the value can be corrected on the Settings page. Confirm it before the
-  first real run.
+- The live disposition value is **confirmed rejected by the worker**, probed
+  2026-11-03 with an invalid value, which the worker refuses with 400 and an
+  enumeration of what it takes:
+
+      {"error":"Invalid disposition","allowed":["not_attempted","complete",
+       "refused","partial","no_answer","busy","voicemail","callback",
+       "disconnected","ineligible","language_barrier"]}
+
+  `disconnected` is on that list, so the unassigned half is sound. None of
+  `live`, `assigned`, `in_service`, `active` or `ring` is, and every accepted
+  value besides `disconnected` and `not_attempted` names an outcome — four of
+  them are strings `check:rdd` asserts can never reach the allowlist.
+
+  **The one-line change belongs on the worker: add `live` to its accepted
+  list.** Picking one of its existing values would mean lying (`complete` for
+  a refusal, `no_answer` for a completed interview) or disclosing the outcome,
+  and the contract forbids both. Nothing changes on this side.
+
+  **Do not run a real wave until the worker takes it.** The live half is
+  rejected per number, so the frame would resolve only disconnected numbers —
+  worse than learning nothing. `GET /api/stats` reports an assignment rate it
+  measures from resolved numbers once 100 or more exist ("Using the 0.28
+  starting estimate; only 0 numbers have been resolved by dialling so far
+  (needs 100+ to measure)"). A resolution set that is entirely disconnected
+  drives that measured rate toward zero, and the oversample for the next draw
+  is computed against it.
 - The draw is capped at `MAX_TARGET_LIVE` (1,200) live respondents, because the
   oversample behind that is already around 4,000 numbers and
   `MAX_BATCH_NUMBERS` is 5,000.
