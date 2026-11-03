@@ -452,9 +452,20 @@ refused or succeeds and silently restates a published figure under a number
 that already meant something else.
 
 A permanent gap is the honest reading. It says a delivery was lost and never
-recovered, which is true, and it needs no special case at either end: the
-receiver's gap list is a set difference over `1..max`, so the number simply
-stays in it. The corollary is that storing what was sent earns its keep only
+recovered, which is true.
+
+**This section used to say the gap list is "a set difference over `1..max`, so
+the number simply stays in it". That is no longer the whole mechanism.** The
+receiver now records a *withdrawal* as a row and excludes withdrawn numbers
+from the gap list — so a number missing from the series means either a lost
+delivery or a withdrawn one, and only the first appears as a gap.
+
+Which strengthens this rule rather than weakening it. Before, any absent
+number read as loss, including one an operator had deliberately removed. Now
+appearing in the gap list is a narrower claim: not merely "no delivery holds
+this number" but "no delivery holds it and none was withdrawn from it". A
+withdrawal is not a gap, and a gap is not a withdrawal — which is what makes
+either worth reporting. The corollary is that storing what was sent earns its keep only
 for the window in which a replay is still faithful; outside that window a new
 sequence is the correct answer and not a fallback.
 

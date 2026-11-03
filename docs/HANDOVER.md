@@ -352,10 +352,11 @@ against it:
    deliveries there. This side still holds the row — sequence 1, `ACCEPTED`,
    `baf25c5c-e30d-4d29-a9d3-81b6a92eeb00` — because nothing told it to let go.
 
-   The consequence is concrete and bad in a familiar way. `allocate` takes
+   The consequence below was averted — see **Settled** further down — and is
+   kept because it is the reason the fix exists. `allocate` takes
    `max + 1` over rows *here*, so the next delivery to `PPM` claims **2**.
-   Their gap list is a set difference over `1..max`, so sequence 1 would
-   report as missing for ever: a permanent false report of a lost delivery,
+   Their gap list was then a set difference over `1..max`, so sequence 1
+   would have reported as missing for ever: a permanent false report of a lost delivery,
    which is precisely what both sides built that mechanism to mean something
    real. The same false-gap failure as the 422 case, reached by a route
    neither side had considered — a deletion at one end that the other does
