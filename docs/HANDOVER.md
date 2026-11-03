@@ -36,7 +36,7 @@ Everything below was verified against the live deployment, not just built:
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
-| Worker carrying the sender | deployed, version `2d50aa8a-86a3-45c1-aa31-c8d552099ebf`, 2.14 MB gzipped; Delivery tab, its six redirects, the Settings key form and the test marking all confirmed present in the bundle; `/` and `/admin/login` render, `/admin/polls` and `/admin/settings` redirect rather than erroring |
+| Worker carrying the sender | deployed, version `6407f9ba-3d86-4b98-8923-3f1a3a1a2317`, 2.14 MB gzipped. Confirmed present in the bundle: the fingerprint prompt, the withdrawn-409 handling, and — checked for regression, not just addition — the test marking, the Delivery tab and the Settings key form. `/` and `/admin/login` render, `/admin/polls` and `/admin/settings` redirect rather than erroring |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -685,12 +685,21 @@ out loud to someone who checked it. Which is an argument for saying what you
 believe rather than only what you have verified — strictly conditional on it
 going to somebody who will test it, and worthless otherwise.
 
-**Live condition.** Their guarantee against re-offering a withdrawn number is
-built and local only; their production has `0017` and the misbehaviour, so a
-re-offered withdrawn number is accepted silently today. This side cannot
-provoke it — `allocate` only ever goes forwards — so it is a mistake or a
-hand-driven replay that would. Past-tense this when they say `0018` is
-applied, and not before.
+**Closed.** Their guarantee against re-offering a withdrawn number went live
+at 16:03 UTC on 3 November (`0018`, worker `10dd108b`), verified by attempting
+the insert the trigger exists to stop against the real withdrawal and having
+it refused with `23001` — plus a control at a free number, so a trigger
+refusing everything could not have passed as one that works. This side could
+never provoke it anyway: `allocate` only goes forwards.
+
+Their deploy order is worth keeping, because it was chosen to protect this
+end rather than theirs. They deployed the worker *before* applying the
+migration. The other order would have left a window where the trigger existed
+and the running worker had no handler for it, so an insert would have raised,
+the catch-all would have answered `500 internal_error`, and this side would
+have seen a fault pointed at their system instead of a `409`. The order they
+chose has no such window, because the pre-check only reads a table `0017`
+already created.
 
 ### A guarantee enforced in one direction gets described in both
 

@@ -373,12 +373,16 @@ async function assemble(
  * withdrawing records what became of the delivery and cannot un-spend the
  * number.
  *
- * They have built the guarantee — a trigger refusing the insert, answering
- * 409 with `withdrawn: true` — but **it is not in their production yet**, so
- * at the time of writing a re-offered withdrawn number is still accepted
- * silently. This side cannot provoke it by accident, because `allocate` takes
+ * They have built the guarantee and it is live as of 16:03 UTC on 3 November:
+ * a trigger refuses the insert and the endpoint answers 409 with
+ * `withdrawn: true`, verified by attempting the insert it exists to stop
+ * against the real withdrawal and having it refused with `23001`. So a
+ * re-offered withdrawn number is now refused rather than silently accepted.
+ *
+ * This side cannot provoke it by accident anyway, because `allocate` takes
  * max + 1 over rows here and never goes backwards. It is a mistake or a
- * hand-driven replay that would.
+ * hand-driven replay that would — and it now fails loudly instead of leaving
+ * a campaign holding a delivery beside a notice withdrawing it.
  */
 async function allocate(
   target: string,
