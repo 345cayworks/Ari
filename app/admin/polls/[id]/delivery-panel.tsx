@@ -108,6 +108,38 @@ export async function DeliveryPanel({
         </p>
       )}
 
+      {/* Shown only until the first delivery to this target, because that is
+          the moment it can still be acted on and after it nagging is noise.
+          
+          The first real delivery went into the wrong campaign: a key was
+          issued for one campaign and a second was minted for another two
+          minutes before the delivery, and the key — not the label anyone
+          typed here — decides where results land. The fingerprint was built
+          to answer exactly that, both sides had the means to compare it, and
+          neither did. Writing the step in a handover was not enough, so it
+          is asked for here instead. */}
+      {ready && deliveries.length === 0 && config.fingerprint !== null && (
+        <div
+          className="mt-4 rounded-2xl border px-5 py-4 text-sm"
+          style={{ borderColor: "#8a6d1f", backgroundColor: "#fdfaf1" }}
+        >
+          <p className="font-semibold" style={{ color: "#6b5417" }}>
+            Before the first delivery, confirm the key
+          </p>
+          <p className="mt-2 text-ink/70">
+            Ask the campaign to read back the fingerprint of the key they
+            issued and check it matches <code>{config.fingerprint}</code>. The
+            key determines which campaign receives these results — the name on
+            the feed is only a label here, so a key issued for a different
+            campaign delivers there regardless of what it is called.
+          </p>
+          <p className="mt-2 text-ink/50">
+            It is the one check that confirms who you are delivering to rather
+            than what you are sending, and a delivery cannot be withdrawn.
+          </p>
+        </div>
+      )}
+
       {/* Two buttons rather than a checkbox, because the difference is not a
           setting — it is what the campaign will permanently hold. A delivery
           cannot be withdrawn, so the test form says what it writes. */}

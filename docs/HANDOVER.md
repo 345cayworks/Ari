@@ -554,6 +554,22 @@ actually has". Neither side compared it. Before any first delivery to a
 campaign, ask the issuing end for the fingerprint of the key it issued and
 confirm it matches the one shown on Settings.
 
+It is now asked for in the UI rather than left to this document: the Delivery
+tab shows the fingerprint and asks for it to be confirmed with the campaign,
+but only while that target has no deliveries — the one moment it can still be
+acted on, after which nagging is noise. Writing the step down was not enough
+once; a prompt at the moment of action is the version that does not depend on
+anyone having read this.
+
+Both sides made the same error in opposite clothes, which is the part worth
+keeping. This side had the mechanism and did not run it. Their side had told
+their operator twice, in writing, to open the right campaign first — then
+verified the arriving payload exhaustively, every field and null and eight
+renderer assertions, and noticed the campaign only because a script happened
+to print its name in a header. Not by checking. **Both were busy verifying the
+thing they had decided to verify**, which is how a signal sitting in plain
+view goes unread.
+
 The label was the other signal and it was dismissed. The feed was saved as
 "PPM - Campaign Office" while every document said `STERLING`, and that
 mismatch was explained away here as cosmetic — true of the mechanism, since
