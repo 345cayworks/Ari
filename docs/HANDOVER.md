@@ -48,12 +48,29 @@ no `POLITRACKER_FEED_TOKEN`, so the button is disabled and the feed is off.
 unknown key gets a 401, not a 500, so its tables really are reachable there).
 
 **Not verified, and one click settles it:** the delivery panel has never been
-rendered by the deployed Worker, because it sits behind admin auth. The query
-it runs is valid against the live schema and the page's siblings render, but
-the `missing Int[]` column and the `PollDeliveryStatus` enum have not been
-read by the WASM client on workerd — only by the Node client from this
-machine. Open a poll's Results tab; the panel should appear saying which of
-the three prerequisites is missing.
+rendered by the deployed Worker, because it sits behind admin auth. Worth
+being precise about what that leaves open, because the honest answer is
+narrower than "untested" and the shape of the risk is the usual one for this
+project — local reads go through the Node client, the Worker's go through the
+WASM one, and the two diverge exactly at type mapping.
+
+Already proven on workerd, so not at risk:
+
+- **Enums.** `PollCall.outcome` is read on every Retell webhook in production.
+- **An empty scalar array.** `PollBatch.days` is `[]` on the one existing row,
+  and the Calls tab's `findMany` takes no `select`, so it comes back whole.
+- **A non-empty `text[]`.** `retellBatchIds` holds one item on that same row.
+
+What is left is one branch: a **non-empty `Int[]`**. `int4[]` is a different
+Postgres type from `text[]`, so the array machinery is proven but that element
+mapping is not. It only occurs when the far end reports `missing_sequences`,
+which cannot happen on a first delivery and does not happen at all unless a
+delivery is lost. Until then `missing` is `[]`, which is the proven case.
+
+If it does break it breaks late, visibly, and without losing anything: the
+delivery has already landed by then and only the panel's rendering of the gap
+list would fail. Open a poll's Results tab to confirm the panel appears at all
+— it should say which of the three prerequisites is missing.
 Migration `20261102223000_poll_delivery` is written but **not applied**, no
 `POLITRACKER_FEED_TOKEN` exists — the receiving end issues it and an invented
 one gets a flat 401 — and the `poll_feed` platform setting is absent, so the
