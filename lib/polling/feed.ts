@@ -1,6 +1,6 @@
 import type { Poll } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { buildDelivery, type DeliveryPayload } from "./delivery";
+import { buildDelivery, type BuildResult, type DeliveryPayload } from "./delivery";
 import { publicationBlockers } from "./publication";
 import { computeStats } from "./results";
 import { loadPollResults } from "./weighted";
@@ -74,25 +74,6 @@ export async function deliverPoll(
     return { ok: false, reason: "POLITRACKER_FEED_TOKEN is not set in the environment." };
   }
 
-  const [calls, results] = await Promise.all([
-    prisma.pollCall.findMany({
-      where: { pollId: poll.id },
-      select: { outcome: true, durationMs: true, analysis: true, startedAt: true, optionOrder: true },
-    }),
-    loadPollResults(poll, { includePartial, weighted: true }),
-  ]);
-
-  const stats = computeStats(calls);
-  const { config: weightingConfig, weighting, tallies } = results;
-  const answered = weighting ? weighting.n : tallies[0]?.total ?? 0;
-
-  if (answered === 0) {
-    return { ok: false, reason: "This poll has no completed interviews to deliver." };
-  }
-
-  const started = calls.map((c) => c.startedAt).filter((d): d is Date => d !== null);
-  started.sort((a, b) => a.getTime() - b.getTime());
-
   // A wave is how many deliveries this poll has already had, plus this one.
   // Counting here is safe where counting the sequence is not: a wave is a
   // property of this poll's own history and a gap in it means nothing to
@@ -100,14 +81,154 @@ export async function deliverPoll(
   const priorWaves = await prisma.pollDelivery.count({ where: { pollId: poll.id } });
 
   const deliveryId = crypto.randomUUID();
-  const built = buildDelivery({
+  const built = await assemble(poll, {
     deliveryId,
     sequence: 0, // replaced once a sequence is allocated below
+    wave: priorWaves + 1,
+    includePartial,
+  });
+  if (built === null) {
+    return { ok: false, reason: "This poll has no completed interviews to deliver." };
+  }
+  if (!built.ok) {
+    return { ok: false, reason: "The results could not be assembled into a delivery.", problems: built.problems };
+  }
+
+  const row = await allocate(target, poll, deliveryId, built.payload);
+  if (row === null) {
+    return { ok: false, reason: "Could not allocate a delivery sequence; another delivery may be in flight." };
+  }
+
+  return send(row.id, config.endpointUrl, row.payload as unknown as DeliveryPayload, {
+    expectNew: true,
+  });
+}
+
+/**
+ * Re-deliver a refused delivery under the sequence it already holds.
+ *
+ * A refusal consumes no sequence at the far end. A 401 and a 403 return before
+ * the payload is looked at, and a 422 returns before the delivery is stored —
+ * read out of its route, and it now has a test pinning the invariant: a
+ * sequence is consumed if and only if that endpoint answered 2xx. So the
+ * number this row holds still means nothing to anybody, and the corrected
+ * payload belongs under it.
+ *
+ * Getting this wrong would have discredited the permanent-gap rule with the
+ * first thing it reported. A gap is supposed to mean a delivery was lost; if
+ * every setup-time 422 left one too, the first real delivery — the one most
+ * likely to be refused — would leave an unclosable gap at sequence 1, and the
+ * feed's first visible fact would be a false report of loss.
+ *
+ * Only `REFUSED` qualifies. A `FAILED` row is a transport error or a 5xx,
+ * where whether the original landed is unknown; that case replays the stored
+ * bytes instead (see {@link replayDelivery}), because rebuilding under a
+ * sequence the far end may already have accepted something under is the one
+ * move that could silently publish numbers nobody chose.
+ */
+export async function redeliverRefused(
+  id: string,
+  options: { includePartial?: boolean } = {},
+): Promise<DeliveryOutcome> {
+  const config = await loadFeedConfig();
+  if (!config.enabled) return { ok: false, reason: "The campaign feed is switched off." };
+  if (config.endpointUrl === "") return { ok: false, reason: "No endpoint URL is configured." };
+  if (!config.hasToken) {
+    return { ok: false, reason: "POLITRACKER_FEED_TOKEN is not set in the environment." };
+  }
+
+  const row = await prisma.pollDelivery.findUnique({
+    where: { id },
+    select: { id: true, sequence: true, status: true, payload: true, poll: true },
+  });
+  if (row === null) return { ok: false, reason: "No such delivery." };
+  if (row.status !== "REFUSED") {
+    return {
+      ok: false,
+      id,
+      reason:
+        row.status === "FAILED" || row.status === "PENDING"
+          ? "This delivery was never refused, so whether it arrived is unknown. Send it again unchanged rather than rebuilding it — rebuilding could restate numbers under a sequence that has already been accepted."
+          : `This delivery was already accepted (#${row.sequence}). Its sequence is spent; deliver again to send revised numbers under a new one.`,
+    };
+  }
+
+  const stored = row.payload as unknown as DeliveryPayload | null;
+  // The same wave, because this is a retry of it rather than a new one.
+  const wave = stored?.poll?.wave ?? 1;
+
+  // A fresh delivery_id, deliberately, even though the contract allows reusing
+  // it. If this row's REFUSED status were ever wrong and the far end did hold
+  // the original, a reused id would come back 200 already_stored — it would
+  // keep its copy and silently drop these numbers while this side recorded a
+  // success. A new id under a taken sequence hits its unique constraint and
+  // fails loudly instead. Of the two ways to be wrong, prefer the noisy one.
+  const deliveryId = crypto.randomUUID();
+  const built = await assemble(row.poll, {
+    deliveryId,
+    sequence: row.sequence,
+    wave,
+    includePartial: options.includePartial ?? false,
+  });
+  if (built === null) {
+    return { ok: false, id, reason: "This poll has no completed interviews to deliver." };
+  }
+  if (!built.ok) {
+    return {
+      ok: false,
+      id,
+      reason: "The results still could not be assembled into a delivery.",
+      problems: built.problems,
+    };
+  }
+
+  await prisma.pollDelivery.update({
+    where: { id },
+    data: {
+      payload: built.payload as never,
+      status: "PENDING",
+      httpStatus: null,
+      detail: null,
+    },
+  });
+
+  return send(id, config.endpointUrl, built.payload, { expectNew: true });
+}
+
+/**
+ * Gather this poll's current results into a payload under a given sequence.
+ *
+ * Null when there is nothing to deliver, so the caller can say so rather than
+ * sending an empty poll.
+ */
+async function assemble(
+  poll: Poll,
+  opts: { deliveryId: string; sequence: number; wave: number; includePartial: boolean },
+): Promise<BuildResult | null> {
+  const [calls, results] = await Promise.all([
+    prisma.pollCall.findMany({
+      where: { pollId: poll.id },
+      select: { outcome: true, durationMs: true, analysis: true, startedAt: true, optionOrder: true },
+    }),
+    loadPollResults(poll, { includePartial: opts.includePartial, weighted: true }),
+  ]);
+
+  const stats = computeStats(calls);
+  const { config: weightingConfig, weighting, tallies } = results;
+  const answered = weighting ? weighting.n : tallies[0]?.total ?? 0;
+  if (answered === 0) return null;
+
+  const started = calls.map((c) => c.startedAt).filter((d): d is Date => d !== null);
+  started.sort((a, b) => a.getTime() - b.getTime());
+
+  return buildDelivery({
+    deliveryId: opts.deliveryId,
+    sequence: opts.sequence,
     poll: {
       id: poll.id,
       name: poll.name,
       topic: String((poll.variables as Record<string, unknown>)?.poll_topic ?? "") || null,
-      wave: priorWaves + 1,
+      wave: opts.wave,
     },
     fieldwork: { from: started[0] ?? null, to: started[started.length - 1] ?? null },
     deliveredAt: new Date(),
@@ -119,17 +240,6 @@ export async function deliverPoll(
     weightedTo: weightedToLabel(weightingConfig, weighting),
     rotated: calls.filter((c) => c.optionOrder !== null).length,
   });
-
-  if (!built.ok) {
-    return { ok: false, reason: "The results could not be assembled into a delivery.", problems: built.problems };
-  }
-
-  const row = await allocate(target, poll, deliveryId, built.payload);
-  if (row === null) {
-    return { ok: false, reason: "Could not allocate a delivery sequence; another delivery may be in flight." };
-  }
-
-  return send(row.id, config.endpointUrl, row.payload as unknown as DeliveryPayload);
 }
 
 /**
@@ -237,7 +347,9 @@ export async function replayDelivery(id: string): Promise<DeliveryOutcome> {
     };
   }
 
-  return send(row.id, config.endpointUrl, payload);
+  // A replay expects a 200 to be possible and welcome: it means the original
+  // did land after all and the transport lost the answer.
+  return send(row.id, config.endpointUrl, payload, { expectNew: false });
 }
 
 /**
@@ -251,6 +363,7 @@ async function send(
   id: string,
   endpointUrl: string,
   payload: DeliveryPayload,
+  options: { expectNew: boolean },
 ): Promise<DeliveryOutcome> {
   const record = async (data: Record<string, unknown>): Promise<void> => {
     await prisma.pollDelivery.update({
@@ -282,6 +395,18 @@ async function send(
     missing_sequences?: number[];
   };
   const missing = Array.isArray(body.missing_sequences) ? body.missing_sequences : [];
+
+  // A 200 means the far end already held this delivery_id. On a replay that is
+  // the point. On a first send or a corrected re-send it is a problem wearing
+  // a success's clothes: the far end kept its copy and these numbers were
+  // discarded, so recording it as delivered would leave this side believing
+  // figures were published that were not.
+  if (res.status === 200 && options.expectNew) {
+    const detail =
+      "The far end already held this delivery id, so the payload just sent was not stored. Its copy stands.";
+    await record({ status: "FAILED", httpStatus: 200, detail, missing });
+    return { ok: false, id, reason: detail };
+  }
 
   if (res.status === 202 || res.status === 200) {
     await record({

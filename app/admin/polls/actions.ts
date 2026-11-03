@@ -15,7 +15,7 @@ import { TARGET_PRESETS } from "@/lib/polling/census";
 import { findTemplate } from "@/lib/polling/templates";
 import { normalizePhone, tryNormalizePhone } from "@/lib/polling/phone";
 import { parseCategories, readWeightingConfig, type WeightTarget } from "@/lib/polling/weighting";
-import { deliverPoll, replayDelivery } from "@/lib/polling/feed";
+import { deliverPoll, redeliverRefused, replayDelivery } from "@/lib/polling/feed";
 import {
   MAX_BATCH_NUMBERS,
   MAX_CALLS_PER_SUBMIT,
@@ -411,6 +411,35 @@ export async function replayResults(formData: FormData): Promise<void> {
     redirect(
       `/admin/polls/${poll.id}?tab=results&error=${encodeURIComponent(result.reason)}`
     );
+  }
+  const q = new URLSearchParams({
+    tab: "results",
+    delivered: result.status,
+    sequence: String(result.sequence),
+  });
+  redirect(`/admin/polls/${poll.id}?${q}`);
+}
+
+/**
+ * Rebuild a refused delivery and send it under the sequence it already holds.
+ *
+ * A refusal consumes no sequence at the receiving end, so the corrected
+ * payload belongs under the same number and no gap is left. This is the
+ * opposite of `replayResults`, which re-sends stored bytes: here the payload
+ * was wrong, so sending it again unchanged would only be refused again.
+ */
+export async function fixAndResendResults(formData: FormData): Promise<void> {
+  const poll = await requirePoll(field(formData, "pollId"));
+  const result = await redeliverRefused(field(formData, "deliveryId"), {
+    includePartial: field(formData, "include") === "partial",
+  });
+  revalidatePath(`/admin/polls/${poll.id}`);
+
+  if (!result.ok) {
+    const detail = result.problems?.length
+      ? `${result.reason} ${result.problems.join(" ")}`
+      : result.reason;
+    redirect(`/admin/polls/${poll.id}?tab=results&error=${encodeURIComponent(detail)}`);
   }
   const q = new URLSearchParams({
     tab: "results",

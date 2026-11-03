@@ -259,7 +259,16 @@ Three things worth knowing before changing any of it:
    Run that after any change to either end's field set. It already earned its
    keep: it caught the builder emitting a `with_a_view` base larger than the
    sample that answered at all.
-3. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
+3. **A refusal consumes no sequence; a failure might have.** A sequence is
+   spent if and only if the far end answered 2xx — a 401 or 403 returns before
+   the payload is read and a 422 before it is stored. So a `REFUSED` row is
+   rebuilt and re-sent under the number it already holds, leaving no gap, and
+   that is what "Fix and send again as #n" does. A `FAILED` row may have
+   landed, so the only repair offered is the stored bytes again; rebuilding
+   there could come back `200 already_stored`, which would mean the far end
+   kept its copy and these numbers were dropped. `send` treats that 200 as a
+   failure rather than a success for exactly that reason.
+4. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
    by-group split, so there is no crosstab source to deliver. The payload type
    carries the shape and the limits already cover it, so a crosstab engine has
    somewhere to plug in. They are optional in the contract, so nothing is

@@ -2,7 +2,7 @@ import type { Poll, PollDeliveryStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { loadFeedConfig } from "@/lib/polling/feed";
 import { formatRelative } from "@/lib/utils";
-import { deliverResults, replayResults } from "../actions";
+import { deliverResults, fixAndResendResults, replayResults } from "../actions";
 
 /**
  * Delivering results to the campaign that commissioned the poll.
@@ -85,6 +85,7 @@ export async function DeliveryPanel({
           {deliveries.map((d) => {
             const tone = TONE[d.status];
             const replayable = d.status === "FAILED" || d.status === "PENDING";
+            const refused = d.status === "REFUSED";
             return (
               <li key={d.id} className="border-t border-ink/10 pt-3 text-sm">
                 <div className="flex flex-wrap items-baseline gap-x-3">
@@ -117,13 +118,42 @@ export async function DeliveryPanel({
                   </p>
                 )}
 
+                {/* Two different repairs, and offering one button for both
+                    would be wrong. A refusal stored nothing at the far end, so
+                    its number is still free and the fix is a corrected payload
+                    under it. A failure might have landed, so the only safe
+                    move is the original bytes again — rebuilding could restate
+                    numbers under a sequence already accepted. */}
+                {refused && (
+                  <form action={fixAndResendResults} className="mt-2">
+                    <input type="hidden" name="pollId" value={poll.id} />
+                    <input type="hidden" name="deliveryId" value={d.id} />
+                    <input
+                      type="hidden"
+                      name="include"
+                      value={includePartial ? "partial" : "completed"}
+                    />
+                    <button type="submit" className="btn-secondary" disabled={!ready}>
+                      Fix and send again as #{d.sequence}
+                    </button>
+                    <span className="ml-2 text-ink/50">
+                      Rebuilds from the current results. This number is still
+                      free, so no gap is left.
+                    </span>
+                  </form>
+                )}
+
                 {replayable && (
                   <form action={replayResults} className="mt-2">
                     <input type="hidden" name="pollId" value={poll.id} />
                     <input type="hidden" name="deliveryId" value={d.id} />
                     <button type="submit" className="btn-secondary" disabled={!ready}>
-                      Send it again
+                      Send it again unchanged
                     </button>
+                    <span className="ml-2 text-ink/50">
+                      It may already have arrived, so the stored payload goes
+                      again rather than a rebuilt one.
+                    </span>
                   </form>
                 )}
               </li>

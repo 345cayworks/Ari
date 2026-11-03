@@ -309,12 +309,46 @@ because it looks correct.
 The provider should also retry a failed delivery with the same `delivery_id`,
 which idempotency makes safe.
 
+### A refusal consumes no sequence
+
+**A sequence is consumed if and only if this endpoint answered 2xx.** A `401`
+and a `403` return before the payload is looked at; a `422` returns before the
+delivery is stored. So a refused delivery leaves its number free, and the
+corrected payload goes out **under the same number**. No gap.
+
+This matters more than it looks, because the rule below depends on it. A gap is
+supposed to mean a delivery was lost. If a refusal left one too, then every
+integration bug during setup would read as permanent data loss — and the first
+real delivery, the one most likely to be refused, would leave an unclosable gap
+at sequence 1. The feed's first visible fact would be a false report of loss.
+
+A failure part-way through storing rolls the whole delivery back at the
+receiver, so a half-written delivery cannot sit on a number and lock the
+provider out of the retry that would have completed it.
+
+The distinction the provider has to keep is between *refused* and *failed*:
+
+| Outcome | Did it store anything? | Repair |
+| --- | --- | --- |
+| `401`, `403`, `422` | No, provably | Rebuild and re-send under the **same** sequence |
+| Transport error, `5xx` | Unknown | Re-send the **stored bytes**; never rebuild |
+
+Rebuilding after a transport failure is the one move that can silently publish
+numbers nobody chose: if the original did land, the same `delivery_id` comes
+back `200 already_stored`, the receiver keeps its copy, and the provider
+records a success for figures that were discarded. Re-sending the stored bytes
+is safe either way, which is why that is the only repair offered there.
+
 ### A lost delivery leaves a permanent gap
+
+This is the case the table above leaves open: a delivery that may have landed,
+whose stored payload is gone.
 
 A replay sends the **stored payload**, byte for byte. When the original cannot
 be reproduced, the answer is a new delivery under a **new** sequence, and the
-old number stays missing for ever. Current numbers must never be pushed into an
-old slot.
+old number stays missing for ever. Current numbers must never be pushed into a
+slot the receiver has already accepted something under. Note the narrowness:
+this is not about refusals, which consume nothing and are repaired in place.
 
 This rule can only live with the provider. The receiver has no way to tell a
 faithful replay from a regenerated one — both arrive as a payload under a
