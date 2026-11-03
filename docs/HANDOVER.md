@@ -382,10 +382,18 @@ against it:
 
    **An earlier version of this paragraph said their gap list would report
    `[1]`, that this was wrong and known, and not to diagnose it.** That was
-   true for about an hour and is now the dangerous kind of stale: a standing
-   instruction to ignore a warning, left in place after the warning stopped
-   being spurious. If a gap is ever reported again it means what it says, and
-   nothing here should discourage looking at it.
+   true from the withdrawal until **15:30 UTC on 3 November**, when `0017`
+   applied and worker `4cdab258` went live. The interval is kept rather than
+   erased because it is part of the record, and because an operator who reads
+   "the dashboard is wrong here, do not diagnose it" and then finds the
+   dashboard correct learns that this file is unreliable — expensive in a
+   document whose entire value is being trusted unread.
+
+   It is the dangerous kind of stale for a reason worth separating from the
+   rest of the drift in this file: a wrong claim misleads, but a standing
+   instruction to ignore a warning *disarms the warning*, and it outlives the
+   condition that justified it precisely because nothing fails when it is
+   wrong. If a gap is reported now it means what it says.
 
    The two options not taken, for the record: delete the row here, freeing
    sequence 1 immediately at the cost of the local record of an event that
@@ -595,6 +603,23 @@ against it:
    somewhere to plug in. They are optional in the contract, so nothing is
    broken by their absence — but the receiving end would prefer them, and a
    campaign that cannot see a district at all will ask for it by other means.
+
+### A guarantee enforced in one direction gets described in both
+
+Their append-only trigger refused `UPDATE` and always permitted `DELETE`,
+because the campaign cascade needs it. So "append-only" was a guarantee about
+*editing* that was read, by both sides, as a guarantee about *history* — and
+the two were the same thing for exactly as long as nobody deleted anything.
+
+This side then wrote that permanence into its own documents, told its user a
+delivery could not be withdrawn, and built a test-marking rationale on top of
+it. The sequence number is what made the difference visible: a withdrawal at
+one end freeing a number the other still held.
+
+Their formulation is the one to carry, and it is more useful than "add
+tombstones": **a guarantee enforced in one direction gets described in both.**
+Worth asking of any invariant in this codebase — what operation does it
+actually constrain, and what have we been saying it means.
 
 ### Compare key fingerprints before a first delivery
 
