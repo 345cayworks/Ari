@@ -347,12 +347,21 @@ async function assemble(
  * Neon over HTTP gives no advisory lock to take instead.
  *
  * A failed delivery does not block the ones behind it, and that is safe rather
- * than merely convenient: the receiver computes its gaps as a set difference
- * over 1..max, not from a high-water mark, so 5 may arrive before 4 and the
- * gap closes by itself when 4 lands. Carrying on and backfilling is the
+ * than merely convenient: the receiver computes its gaps over 1..max rather
+ * than from a high-water mark, so 5 may arrive before 4 and the gap closes by
+ * itself when 4 lands. Carrying on and backfilling is the
  * intended shape. What must not happen is two deliveries claiming one number
  * — that it refuses outright — which is why the number is read back off the
  * row rather than recomputed anywhere.
+ *
+ * What a change here is holding, stated as a constraint rather than a fact
+ * because the fact alone does not warn anybody. Out-of-order is safe.
+ * **Skipping a number is not**: their gap list is the set of numbers no
+ * delivery holds and no withdrawal accounts for, so a number this side never
+ * sends is reported to a campaign as a delivery that was lost. And a number
+ * they have *withdrawn* is out of their gap list but still counts toward the
+ * series bound, so it is not free for reuse either — reclaiming one would
+ * collide rather than tidy up.
  */
 async function allocate(
   target: string,
@@ -404,8 +413,13 @@ async function allocate(
  * enforce is that a sequence is used once, so resequencing would either be
  * refused or, worse, succeed and silently restate a figure. A permanent gap is
  * the honest outcome — it reads as "a delivery was lost", which is true, and
- * their `missingSequences` is a set difference that reports it for ever
- * without needing a special case.
+ * their `missingSequences` reports it for as long as it stays true.
+ *
+ * Note what that now excludes. Their gap list omits numbers they have
+ * recorded as withdrawn, so appearing in it means no delivery holds the
+ * number *and* no withdrawal accounts for it. That is narrower than it was
+ * this morning and therefore a stronger claim: a gap is loss, and a
+ * withdrawal is not a gap.
  */
 export async function replayDelivery(id: string): Promise<DeliveryOutcome> {
   const config = await loadFeedConfig();

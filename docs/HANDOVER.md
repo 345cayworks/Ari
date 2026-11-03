@@ -605,6 +605,34 @@ against it:
    broken by their absence — but the receiving end would prefer them, and a
    campaign that cannot see a district at all will ask for it by other means.
 
+### The tell for a claim about your own record
+
+Every failure between the two sides today was a claim about code or about the
+other side's system. Those feel like assertions, so they get checked. A claim
+about one's own record does not feel like an assertion — it feels like recall.
+
+The tell, which is the other session's and is worth keeping verbatim: a
+sentence of the form **"I told you X", "I wrote X", "that is recorded in Y"**.
+All three are assertions about an artefact, and all three are cheaper to check
+than any claim about the world. There is no excuse available for them that is
+not also available for the claims we do check.
+
+Two instances, one each. This side twice told its user that a record was in
+this file when it was not. Their side asserted a prior statement of its own
+that had never existed, and did not grep its own outbox before passing on the
+correction. Theirs arrived as a courtesy — flagging a correction, crediting
+the other — which is what disguised it: it read as generous rather than as
+factual.
+
+### A comment should carry the constraint, not just the fact
+
+Also theirs, and it changed code here. A comment stating how the far end
+computes something tells the next person what is true. It does not tell them
+what they are holding — that widening a set or a bound carelessly will make
+the far end accuse this one of losing something it deleted on purpose. The
+gap-list comments in `feed.ts` were facts and are now constraints, which is
+the difference between a reader being informed and a reader being warned.
+
 ### A guarantee enforced in one direction gets described in both
 
 Their append-only trigger refused `UPDATE` and always permitted `DELETE`,
