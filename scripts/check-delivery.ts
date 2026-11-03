@@ -204,6 +204,11 @@ check("a respondent-level field is caught before it is sent", !leaky.ok,
   leaky.ok ? "it was NOT caught" : leaky.problems.join("; "));
 
 // --- Against the receiving end's own parser ------------------------------
+// Whether the cross-check against the receiver's real parser actually ran.
+// Tracked because without it this script verifies only that the builder
+// agrees with itself, and a summary line reading "all checks passed" after
+// skipping it is a reassurance with nothing behind it.
+let crossChecked = false;
 const parserFlag = process.argv.indexOf("--parser");
 if (parserFlag === -1 || process.argv[parserFlag + 1] === undefined) {
   console.log("\nReceiver parser: skipped (pass --parser <bundled feed.cjs> to include it)");
@@ -214,6 +219,23 @@ if (parserFlag === -1 || process.argv[parserFlag + 1] === undefined) {
   const { parseDelivery } = require(path) as {
     parseDelivery: (v: unknown) => { ok: true } | { ok: false; reason: string };
   };
+  crossChecked = true;
+
+  // A bundle is a copy of their parser frozen at the moment it was built, so
+  // its age is the age of the only evidence this script has about their end.
+  // Printed rather than enforced: there is no way from here to know which
+  // commit it came from, and a wrong staleness threshold would be its own
+  // false reassurance.
+  try {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { statSync } = require("node:fs") as typeof import("node:fs");
+    const ageHours = (Date.now() - statSync(path).mtimeMs) / 3_600_000;
+    console.log(
+      `  (bundle built ${ageHours < 1 ? "under an hour" : `${Math.round(ageHours)} hour(s)`} ago — rebuild it if their parser has moved since)`,
+    );
+  } catch {
+    // Not worth failing the run over.
+  }
   const cases: [string, ReturnType<typeof buildDelivery>][] = [
     ["a healthy poll", healthy],
     ["a poll that should not be published", thin],
@@ -381,5 +403,18 @@ if (parserFlag === -1 || process.argv[parserFlag + 1] === undefined) {
   }
 }
 
-console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`);
+if (failures > 0) {
+  console.log(`\n${failures} check(s) failed.`);
+} else if (crossChecked) {
+  console.log("\nAll checks passed, including against the receiver's own parser.");
+} else {
+  // Deliberately not "all checks passed". Everything that ran compared the
+  // builder with itself; the limits and every field name were not checked
+  // against the only thing that decides them, which is the other end's
+  // parser. Saying otherwise would make this script the thing it exists to
+  // catch — a verification whose presence is reassuring and whose function
+  // is absent.
+  console.log("\nThe builder's own checks passed. The contract was NOT checked:");
+  console.log("  limits and field names are unverified without --parser.");
+}
 process.exit(failures === 0 ? 0 : 1);
