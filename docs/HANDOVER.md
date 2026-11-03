@@ -34,7 +34,7 @@ Everything below was verified against the live deployment, not just built:
 | Option rotation | 400-rotation test: scales only reverse, unordered options average dead centre, terminal options never move |
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
-| Worker carrying the sender | deployed, version `b138af8f-655e-449a-9761-11a359139441`, 2.13 MB gzipped; `/` and `/admin/login` render, `/admin/polls` redirects rather than erroring |
+| Worker carrying the sender | deployed, version `5ad0790d-f11a-4dc7-82fd-18cd407b075b`, 2.13 MB gzipped, test marking confirmed present in the bundle; `/` and `/admin/login` render, `/admin/polls` and `/admin/settings` redirect rather than erroring |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -101,6 +101,39 @@ document.
 
 `driverAdapters` and `queryCompiler` are **not** the fix: 6.19.3 warns both are
 deprecated and on by default.
+
+## Deploying: run it from cmd.exe, not Git Bash
+
+`npm run deploy` fails from Git Bash with `[Error: spawn UNKNOWN]`, errno
+-4094. OpenNext does not build in-process — `buildNextjsApp` spawns
+`npm run build` as a child with `shell: true`, and that spawn is what dies.
+The build itself is fine: `npm run build` on its own exits 0 and produces
+correct output. Four attempts failed the same way, memory was ruled out (one
+earlier failure was a `node::Realloc` crash, but freeing memory changed
+nothing), and `COMSPEC` is set with `cmd.exe` present.
+
+What works:
+
+```
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmd.exe /c "npm run deploy"
+```
+
+Both variables are needed. Without them Git Bash rewrites `/c` as a path, so
+`cmd.exe` launches interactively, runs nothing, and **exits 0** — a deploy that
+reports success and does not happen. That cost a false "deployed" here, caught
+only by grepping the built bundle instead of trusting the exit code.
+
+So verify a deploy by its artifact, not its status:
+
+```
+grep -ro "<a string your change added>" .open-next/ | wc -l
+```
+
+`--skipNextBuild` is not a way round it: it needs `.next/standalone`, which
+plain `next build` does not produce because `output: "standalone"` is absent
+from `next.config.ts` — OpenNext injects it when it runs the build itself.
+Adding it would route around the broken spawn permanently, which is an option
+nobody has taken yet.
 
 ## How to work on this locally
 
