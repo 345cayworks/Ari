@@ -428,10 +428,31 @@ against it:
    gap set-difference all exercised against real rows, and `last_used_at`
    written through `ctx.waitUntil`.
 
-   One thing that still is not measured, and silence on it is not success:
+   **The 409 itself has never fired, at either end.** It is present by
+   provenance, not by observation: the live deployment id matches what their
+   deploy printed, the tree it was built from contains the handler, and a
+   sibling change from the same bundle (`last_used_at`) is proven
+   behaviourally — so the code is serving. But firing it needs a sequence
+   already held, and there have been none. Their own correction, and worth
+   keeping the distinction rather than collapsing it as both of us had.
+
+   The same is true of the handling on this side. Nothing has exercised the
+   `send` 409 branch: the payload checks cannot reach it, and it needs a live
+   conflict. If a first delivery ever needs retrying under a different
+   `delivery_id`, that will be the first time either half of that path runs.
+
+   Two other things are not measured, and silence on them is not success:
    `GET /v1/polls` needs a signed-in session, so the *read* through Hyperdrive
    on workerd is inferred from the write having used the same client on the
-   same path. Only a person opening that page closes it.
+   same path — only a person opening that page closes it. And `markAsTest`'s
+   wiring is proven only by looking at the stored row of a real delivery.
+
+   What *is* now guarded rather than observed once: a null inside jsonb coming
+   back as a null and not the string. They pinned it against real Postgres
+   after this side asked, with the test verified to discriminate by mutating
+   the mapping to return text. That was the one failure in the contract that
+   would have survived every type check on both sides and then looked like a
+   result.
 
 
 7. **Breakdowns are not implemented, deliberately.** `tallyResponses` has no
