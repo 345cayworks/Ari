@@ -620,7 +620,21 @@ and pinned in `check-delivery.ts`, and the line enforcing it said nothing. A
 simplification that looks obviously safe deserves the reason beside it, not
 only a failing check afterwards.
 
-Worth keeping the limit in view: this does not solve having written a rule and
+**Sort invariants by whether their violation announces itself.** Theirs would
+have: a page showing a delivery and a withdrawal for the same number is a
+contradiction somebody reads out loud and asks about. Ours does not. The
+receiving end composes conjunctively, so a self-contradicting payload is
+resolved their way silently — no page disagrees, no error is raised, and the
+contradiction survives only in what this side believed it sent.
+
+A redundant-looking line whose failure is invisible at both ends is the
+hardest kind to keep, and the comment on it should lead with the stakes rather
+than the mechanism. Ours now opens with what breaks — a delivery marked as a
+trial carrying a question marked publishable — because that is the sentence
+that stops the edit, and the explanation is only useful to somebody who has
+already stopped.
+
+Worth keeping the limit in view: none of this solves having written a rule and
 not having it to hand when writing the next thing. Neither side has a
 mechanism for that, and both have said so rather than claiming otherwise.
 

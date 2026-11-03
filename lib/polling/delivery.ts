@@ -337,19 +337,24 @@ export function buildDelivery(input: BuildInput): BuildResult {
     // base. A question only half the sample reached does not inherit a clean
     // bill of health from the topline.
     //
-    // **`input.blockers.length === 0` is load-bearing and looks redundant.**
-    // It is what guarantees this side never emits a quotable question inside
-    // an unquotable delivery. The receiving end composes the levels
-    // conjunctively — a parent that withholds cannot be reinstated by a child
-    // — so a payload that contradicted itself would not be refused, it would
-    // be silently resolved their way, and the contradiction would live only
-    // in what we believed we had sent.
+    // **Drop `input.blockers.length === 0` and a delivery marked as a trial
+    // can carry a question marked publishable.** That is what the conjunct
+    // holds, and it looks redundant — a thin question would get its own
+    // blockers anyway — so the stakes go first.
     //
-    // It matters most for the test marking, which sits at the delivery level:
-    // drop this conjunct and a delivery marked as a trial could carry a
-    // question marked publishable. `scripts/check-delivery.ts` asserts it, so
-    // removing it fails there — but a simplification that looks obviously safe
-    // deserves the reason beside it and not only a failing check afterwards.
+    // It guarantees this side never emits a quotable question inside an
+    // unquotable delivery, which matters most for the test marking because
+    // that notice sits at the delivery level and has to suppress everything
+    // beneath it.
+    //
+    // Nothing anywhere would contradict the loss. The receiving end composes
+    // the levels conjunctively — a parent that withholds cannot be reinstated
+    // by a child — so a self-contradicting payload is not refused, it is
+    // resolved their way silently, and the contradiction survives only in
+    // what this side believed it sent. No page disagrees, no error is raised.
+    // `scripts/check-delivery.ts` asserts it, so removing the conjunct fails
+    // there — but an invariant whose violation is invisible at both ends needs
+    // its reason beside it, not only a failing check afterwards.
     const perQuestion =
       tally.total < input.answered
         ? {
