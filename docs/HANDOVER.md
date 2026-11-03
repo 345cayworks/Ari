@@ -370,14 +370,21 @@ against it:
    withdrawn numbers from its gap list. A tombstone, needing nothing from
    here and no change to the contract. They have offered to build it.
 
-   So the choice is:
+   **Decided: the row stays.** Nothing is deleted here, and the receiving end
+   is building the tombstone. Until it ships their gap list reports `[1]` and
+   their page says a delivery was lost, which is wrong and known — do not
+   diagnose it, and do not let it prompt a replay. The alternative was
+   deleting production data to tidy a sequence number, which is the worse
+   trade when the other end has volunteered the proper fix.
 
-   1. **Keep the row and let them tombstone it.** Their gap list reports `[1]`
-      until that ships, then stops. Nothing is deleted here.
-   2. **Delete the row here.** Sequence 1 is immediately free both sides and
-      the next delivery is a clean 1, at the cost of the local record.
-   3. Keep it and build nothing — a standing `[1]` on their dashboard saying a
-      delivery was lost when one was withdrawn.
+   The two options not taken, for the record: delete the row here, freeing
+   sequence 1 immediately at the cost of the local record of an event that
+   did happen; or keep it and build nothing, leaving a standing false claim
+   of loss on somebody's dashboard.
+
+   **Next delivery to `PPM` will be sequence 2.** That is correct and not a
+   symptom. Sequence 1 belongs to a delivery that was sent, accepted and
+   later withdrawn at the far end.
 
    Also worth correcting: this document called an `ACCEPTED` row asserting a
    delivery the far end no longer holds "a false claim in data". That was too
