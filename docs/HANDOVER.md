@@ -370,12 +370,22 @@ against it:
    withdrawn numbers from its gap list. A tombstone, needing nothing from
    here and no change to the contract. They have offered to build it.
 
-   **Decided: the row stays.** Nothing is deleted here, and the receiving end
-   is building the tombstone. Until it ships their gap list reports `[1]` and
-   their page says a delivery was lost, which is wrong and known — do not
-   diagnose it, and do not let it prompt a replay. The alternative was
-   deleting production data to tidy a sequence number, which is the worse
-   trade when the other end has volunteered the proper fix.
+   **Settled. The row stays and the tombstone is live.** Nothing was deleted
+   here. The receiving end applied `0017_poll_withdrawal` and now records a
+   withdrawal as a row rather than an absence, so sequence 1 of `PPM` is
+   marked withdrawn and excluded from the gap list.
+
+   Measured at their end rather than reasoned: their own `missingSequences`
+   run against production reports nothing missing for `PPM`, and a simulated
+   sequence-2 arrival over the real rows also reports nothing missing. That
+   second one is the claim this side was waiting on.
+
+   **An earlier version of this paragraph said their gap list would report
+   `[1]`, that this was wrong and known, and not to diagnose it.** That was
+   true for about an hour and is now the dangerous kind of stale: a standing
+   instruction to ignore a warning, left in place after the warning stopped
+   being spurious. If a gap is ever reported again it means what it says, and
+   nothing here should discourage looking at it.
 
    The two options not taken, for the record: delete the row here, freeing
    sequence 1 immediately at the cost of the local record of an event that
@@ -467,8 +477,11 @@ against it:
    and not a measurement of opinion. The sample-size blocker alone was not
    enough: "the sample is 6" is true and still lets a reader conclude it was
    real fieldwork with few respondents. The wording is fixed rather than
-   operator-supplied because a delivery cannot be withdrawn and it has to read
-   correctly to someone who was not here.
+   operator-supplied because it has to read correctly to someone who was not
+   here. It once said "because a delivery cannot be withdrawn" — which has now
+   been disproved twice over: once by a delete, and once by the withdrawal
+   mechanism built to record one. The wording still has to stand on its own,
+   because a row that *could* be withdrawn is not a row that *will* be.
 
    `redeliverRefused` recovers the intent from the stored payload's blockers
    rather than from a column, so a re-send of a test stays marked as one.
