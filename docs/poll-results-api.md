@@ -1,6 +1,7 @@
 # Poll results API — delivering a poll to a campaign
 
-Contract between the polling platform (**provider**, polling.cayworks.net) and
+Contract between Polimeter (**provider**, polimeter.cayworks.net, formerly
+and still polling.cayworks.net) and
 Politracker (**receiver**, politracker.cayworks.net). Written from the provider
 side because the provider publishes the contract; the receiving half is
 Politracker's to design against it.

@@ -36,7 +36,7 @@ Everything below was verified against the live deployment, not just built:
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
-| Worker carrying the sender | deployed, version `6407f9ba-3d86-4b98-8923-3f1a3a1a2317`, 2.14 MB gzipped. Confirmed present in the bundle: the fingerprint prompt, the withdrawn-409 handling, and — checked for regression, not just addition — the test marking, the Delivery tab and the Settings key form. `/` and `/admin/login` render, `/admin/polls` and `/admin/settings` redirect rather than erroring |
+| Worker carrying the sender | deployed, version `4ecbf466-07a2-41c2-8cef-b9c507c98561`, 2.12 MB gzipped, on **two** custom domains: `polimeter.cayworks.net` (new) and `polling.cayworks.net` (kept — the Retell and Telegram webhooks are registered against it). Both answer 200. Confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form and fingerprint prompt |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
