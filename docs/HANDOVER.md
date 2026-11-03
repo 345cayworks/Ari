@@ -309,6 +309,7 @@ applied in Politracker. This side:
 | `lib/polling/feed.ts` | Config, sequence allocation, the request, the replay. Worker only |
 | `lib/polling/publication.ts` | The gate, moved out of `poll-charts.tsx` now that it travels to another system |
 | `scripts/check-delivery.ts` | `npm run check:delivery` |
+| `scripts/show-delivery.ts` | `npm run show:delivery` — prints the stored row and every blocker in full |
 | `app/admin/polls/[id]/delivery-panel.tsx` | The button, and the log of what has gone |
 
 Worth knowing before changing any of it — and deliberately not counted,
@@ -440,6 +441,17 @@ against it:
    `send` 409 branch: the payload checks cannot reach it, and it needs a live
    conflict. If a first delivery ever needs retrying under a different
    `delivery_id`, that will be the first time either half of that path runs.
+
+   **`npm run show:delivery` has only ever run against an empty table.** Its
+   "nothing stored" path is verified; its populated path is not, and the
+   first delivery is the first run of both it and the thing it reports on. A
+   `--demo` mode formatting a synthetic payload was considered and rejected:
+   it would exercise the string formatting while implying coverage of the
+   part that matters, which is whether a null inside the stored jsonb comes
+   back as a null. Exercising that needs a real row, and writing one to
+   production was refused as a shared-resource change — correctly, since
+   nobody had authorised it. So read its first output as evidence about
+   itself as well as about the delivery.
 
    Two other things are not measured, and silence on them is not success:
    `GET /v1/polls` needs a signed-in session, so the *read* through Hyperdrive
