@@ -16,7 +16,20 @@
   // orders the certificate. Adding a route turns the *.workers.dev URL OFF by
   // default, which 404s every webhook still pointed at it — so keep it on
   // explicitly until nothing depends on it.
-  "routes": [{ "pattern": "polling.cayworks.net", "custom_domain": true }],
+  // The product's hostname, and the one the webhooks were registered
+  // against. Both reach this Worker and BOTH must stay.
+  //
+  // polling.cayworks.net is not legacy. The Retell agent's webhook URLs and
+  // the Telegram webhook were registered against it, and those registrations
+  // live at Retell and at Telegram rather than here — so removing this route
+  // would silently stop call ingestion and the bot, with nothing in this
+  // repository to explain why. Re-pointing them is a deliberate operation
+  // (rotate the webhook, re-register, verify a call lands), not a consequence
+  // of a rename.
+  "routes": [
+    { "pattern": "polimeter.cayworks.net", "custom_domain": true },
+    { "pattern": "polling.cayworks.net", "custom_domain": true }
+  ],
   "workers_dev": true,
   "observability": { "enabled": true }
 

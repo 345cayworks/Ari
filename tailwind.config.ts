@@ -36,6 +36,20 @@ const config: Config = {
           "Inter",
           "sans-serif",
         ],
+        // A system serif stack rather than a web font. Deliberate: the Worker
+        // runs at 2.14 MB against a 3 MB ceiling, and a build-time font fetch
+        // is a network dependency on a build that fails for other reasons
+        // often enough already. Iowan and Palatino render beautifully on
+        // Apple devices, Georgia is a respectable floor everywhere else, and
+        // all of them cost nothing.
+        serif: [
+          "Iowan Old Style",
+          "Palatino Linotype",
+          "Palatino",
+          "Georgia",
+          "ui-serif",
+          "serif",
+        ],
       },
       boxShadow: {
         card: "0 1px 2px rgba(11,18,32,0.04), 0 4px 16px rgba(11,18,32,0.06)",
