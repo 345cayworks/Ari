@@ -32,7 +32,7 @@ Everything below was verified against the live deployment, not just built:
 | Results charts and the publication gate | rendered and inspected in a browser; the gate fires on the test poll |
 | Question-set templates | four sets on the Setup tab, previewed on a throwaway poll |
 | Option rotation | 400-rotation test: scales only reverse, unordered options average dead centre, terminal options never move |
-| First real delivery | **Landed.** Sequence 1, `202 ACCEPTED`, test poll, 3 respondents. Gate `quotable: false` with the test notice first and the sample-size reason second; `pct_with_a_view` came back as a real `null` on the no-view answer; `method` as an object; `missing` as an empty array; row and payload agree on id and sequence |
+| First real delivery | **Landed, on the wrong campaign.** Sequence 1, `202 ACCEPTED`, test poll, 3 respondents — into `PPM` (4,240 electors), not the 13-elector `STERLING` chosen for it. See below. Gate `quotable: false` with the test notice first and the sample-size reason second; `pct_with_a_view` came back as a real `null` on the no-view answer; `method` as an object; `missing` as an empty array; row and payload agree on id and sequence |
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
@@ -527,6 +527,43 @@ against it:
    somewhere to plug in. They are optional in the contract, so nothing is
    broken by their absence — but the receiving end would prefer them, and a
    campaign that cannot see a district at all will ask for it by other means.
+
+### Compare key fingerprints before a first delivery
+
+The first delivery went into the wrong campaign, and the check that would
+have caught it existed and nobody ran it.
+
+A `STERLING` key was issued by hand and handed over, `STERLING` having been
+chosen because it holds 13 electors and is plainly not a live operation. But
+their operator then minted a *fresh* key from their own Settings page two
+minutes before the delivery, with `PPM` open rather than `STERLING`, and
+passed that one along. So the test row permanently holds sequence 1 of a real
+campaign's series, in a campaign with 4,240 electors. The hand-issued
+`STERLING` key is still unused.
+
+It is not a disaster, and the reason is the test marking: the row is
+unquotable, carries the notice in plain words, and renders as withheld at
+their end — verified against the real row through their actual renderer, not
+a fixture. That is the thing built for a case nobody intended, working in it.
+Whether the row stays is their operator's call on their own campaign.
+
+**`FeedTarget.tokenFingerprint` is the check and it was built for exactly
+this.** Its own comment says it is "enough to compare against what the other
+end reports for the key it issued, which is the only question an operator
+actually has". Neither side compared it. Before any first delivery to a
+campaign, ask the issuing end for the fingerprint of the key it issued and
+confirm it matches the one shown on Settings.
+
+The label was the other signal and it was dismissed. The feed was saved as
+"PPM - Campaign Office" while every document said `STERLING`, and that
+mismatch was explained away here as cosmetic — true of the mechanism, since
+the campaign is determined by the token and not the label, and wrong as a
+reading, because the label was the only visible trace of which key was in
+hand. A field that cannot affect behaviour can still be the only evidence.
+
+**One non-discrepancy, so nobody chases it.** Our `sentAt` is about 1.6
+seconds *after* their `receivedAt`, because `sentAt` is recorded once the
+fetch resolves, which is necessarily after they have stored and answered.
 
 ### A commit message is immutable, so keep out-of-tree claims out of it
 
