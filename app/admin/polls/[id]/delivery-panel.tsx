@@ -153,8 +153,15 @@ export async function DeliveryPanel({
                   )}
                 </div>
 
+                {/* break-words, not break-all: this is the one element that
+                    renders a string of the far end's choosing, and theirs
+                    contain unbroken tokens with no space to wrap at — a 422
+                    names a field path like
+                    `breakdowns[0].rows[0].answers[0].pct_with_a_view`, and a
+                    409 carries a delivery uuid. At phone width that overruns
+                    the card. break-all would also chop the prose around it. */}
                 {d.detail !== null && (
-                  <p className="mt-1 text-ink/70">{d.detail}</p>
+                  <p className="mt-1 break-words text-ink/70">{d.detail}</p>
                 )}
 
                 {d.missing.length > 0 && (

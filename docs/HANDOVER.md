@@ -504,7 +504,16 @@ against it:
    has to *present* the key, so a hash is not an option. Encryption is the
    best available here, not the best imaginable.
 
-   `npm run check:secret-box` has 16 assertions, each paired with the thing
+   **Where a key comes from, as of 3 November.** Ours was issued by hand at
+   the far end and handed over person to person. They have since built an
+   invitation flow: a campaign manager invites a pollster by email, and the
+   pollster collects a key from a single-use link. The key is minted when the
+   link is *claimed*, not when the invitation is sent, so an unopened
+   invitation leaves no credential in existence and withdrawing an invitation
+   withdraws the key it produced. Our key is untouched by any of it. If a
+   fresh one is ever wanted, that route works and the old one can be revoked.
+
+      `npm run check:secret-box` has 16 assertions, each paired with the thing
    that would let it pass by accident: "it opens" beside "it does not open
    under a different secret", "the ciphertext differs each time" beside "both
    still open", and the fingerprint checked not to depend on the secret, since
