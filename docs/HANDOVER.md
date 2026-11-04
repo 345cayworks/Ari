@@ -1163,6 +1163,26 @@ Deployment and tooling, all learned the hard way this session:
   POST into a GET and drop its body, which is the wrong failure for a host
   that until today received webhooks.
 
+  **Verified as configuration, not as delivery.** The agent reports the new
+  URLs, the old host 308s with the path preserved, the canonical host answers
+  401 to an unsigned webhook POST, `/admin/polls` redirects to its own login
+  instead of looping, and an existing admin session survived the switch. What
+  has *not* happened is a real call: no webhook has been received at
+  `polimeter.cayworks.net`, and no `record_answer` has been written through
+  the new tool URLs. The last `PollCall` row is from 2026-11-03T00:24Z.
+
+  That gap is the same shape as the `not_attempted` bug found earlier the same
+  day. There, probing proved the frame would *accept* `live`, and that was
+  allowed to stand for proof this platform would *send* it; it never did. Here
+  the agent reports the right URLs, which is not evidence that a delivery to
+  them lands and is ingested. A call will settle it. The TEST poll was left in
+  DRAFT deliberately by the user, so the test is outstanding, and the way to
+  run it is: activate the poll, "Call now" to one known number, then confirm a
+  new `PollCall` row with an outcome **and** `PollResponse` rows — the rows,
+  not the ringing, because a call can connect and sound perfect while
+  recording nothing, which is precisely what moving only the webhook and not
+  the three tool URLs would have caused.
+
 - **Adding a `routes` entry to `wrangler.jsonc` turns `workers_dev` off by
   default.** This 404'd the app and both webhooks mid-session. `workers_dev:
   true` is now explicit — keep it until nothing points at the `workers.dev` URL.
