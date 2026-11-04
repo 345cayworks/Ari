@@ -4,8 +4,9 @@ Last updated 2026-10-25, third session. Branch `claude/stoic-tesla-2tUY0` on
 `345cayworks/ari`. No pull request opened yet — the user has not asked.
 
 **It is deployed and working.** Canonical URL
-**https://polling.cayworks.net**; `https://ari.delicate-wood-499a.workers.dev`
-still serves as a fallback and `workers_dev` is deliberately kept on.
+**https://polimeter.cayworks.net**. `polling.cayworks.net` now 308s to it,
+path preserved, and `https://ari.delicate-wood-499a.workers.dev` still serves
+as a fallback with `workers_dev` deliberately kept on.
 
 ## Goal
 
@@ -36,7 +37,7 @@ Everything below was verified against the live deployment, not just built:
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
-| Worker carrying the sender | deployed, version `edcc8973-f379-465e-88f7-e651ee510250`, 2.11 MB gzipped, on **two** custom domains: `polimeter.cayworks.net` (new) and `polling.cayworks.net` (kept — the Retell and Telegram webhooks are registered against it). Both answer 200. Confirmed live: `/robots.txt`, `/sitemap.xml` and `/icon.svg` all serve with the right content types, and the word "nineteen" no longer appears anywhere in the page HTML — the landing page claimed calls "across all nineteen districts" in six places and the platform does not do that; it rakes to six areas and the frame has no geography at all. Also confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt, the number screener and the RDD sampling frame. PR #1 is merged (`67ab48c`) and the `20261103T160000_rdd_frame` migration is applied to Neon — verified by reading the schema back: `RddSource` present, twelve `rdd*` columns on `PollBatch` all nullable or defaulted, existing rows untouched. The Calls tab was loaded signed in afterwards and shows the frame panel above the list screener, both rendering. The frame is **configured**: `RddSource` row "Cayman mobile RDD frame", base `https://cayman-rdd.delicate-wood-499a.workers.dev`, live disposition `live`, key fingerprint `03bc71df` — matched against the fingerprint computed locally from `RDD_TOKEN` before saving, which is what confirms the key that landed is the key intended rather than a paste that went astray. No draw has been made |
+| Worker carrying the sender | deployed, version `6fabc844-c670-45df-81c1-5ea979e01a14`, 2.11 MB gzipped. `polimeter.cayworks.net` is canonical and serves; `polling.cayworks.net` 308s to it with the path preserved, and all four Retell URLs plus the Telegram webhook were moved to the canonical host first. Confirmed live: `/robots.txt`, `/sitemap.xml` and `/icon.svg` all serve with the right content types, and the word "nineteen" no longer appears anywhere in the page HTML — the landing page claimed calls "across all nineteen districts" in six places and the platform does not do that; it rakes to six areas and the frame has no geography at all. Also confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt, the number screener and the RDD sampling frame. PR #1 is merged (`67ab48c`) and the `20261103T160000_rdd_frame` migration is applied to Neon — verified by reading the schema back: `RddSource` present, twelve `rdd*` columns on `PollBatch` all nullable or defaulted, existing rows untouched. The Calls tab was loaded signed in afterwards and shows the frame panel above the list screener, both rendering. The frame is **configured**: `RddSource` row "Cayman mobile RDD frame", base `https://cayman-rdd.delicate-wood-499a.workers.dev`, live disposition `live`, key fingerprint `03bc71df` — matched against the fingerprint computed locally from `RDD_TOKEN` before saving, which is what confirms the key that landed is the key intended rather than a paste that went astray. No draw has been made |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -1133,13 +1134,34 @@ design.
 
 Deployment and tooling, all learned the hard way this session:
 
-- **The admin only works on `polling.cayworks.net`.** `NEXTAUTH_URL` still
-  points there, so the session cookie is scoped to that host and
-  `polimeter.cayworks.net/admin` is an endless login loop — sign in, get
-  returned to the login form, with nothing on the page explaining why. The
-  Polimeter host serves the public site correctly; it is only the admin that
-  cannot hold a session. This is the far end of the canonical-host switch that
-  was deliberately deferred, and it bit during the first signed-in walkthrough.
+- **The canonical-host switch is done**, 2026-11-03, and the order it was
+  done in is the part worth keeping. `polling.cayworks.net` carried three
+  things besides the public site: the admin session cookie via `NEXTAUTH_URL`,
+  the Retell registrations, and the Telegram webhook. Redirecting the host
+  first would have taken all three down at once — Retell would have POSTed
+  call results into a redirect, and nobody could have signed in anywhere,
+  because the cookie cannot be set on the new host until `NEXTAUTH_URL` moves
+  and the old host would already be redirecting away.
+
+  So the redirect shipped **last**: secrets (`NEXTAUTH_URL`,
+  `PUBLIC_BASE_URL`), then Retell, then Telegram, then the 308. Both hosts
+  already served the same Worker, so every registration could be moved to the
+  new address and start working immediately, with nothing pointing at a
+  redirected path at any moment.
+
+  **Retell needed four URL changes, not one.** The agent's `webhook_url`, and
+  the `url` on each of `record_answer`, `add_to_do_not_call` and
+  `schedule_callback` — the tools are how an answer is written down during a
+  call, so missing them would have left interviews silently unrecorded.
+  `npm run retell:sync` would have moved all four and also overwritten the
+  live dashboard prompt with the repo's incompatible one (see the prompt
+  section above), so the change was a targeted PATCH of `webhook_url` and
+  `general_tools` only, with the prompt verified at 4,333 characters before
+  and after.
+
+  The 308 is deliberate. A 301 is treated by most clients as licence to turn a
+  POST into a GET and drop its body, which is the wrong failure for a host
+  that until today received webhooks.
 
 - **Adding a `routes` entry to `wrangler.jsonc` turns `workers_dev` off by
   default.** This 404'd the app and both webhooks mid-session. `workers_dev:
