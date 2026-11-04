@@ -119,7 +119,18 @@ export default async function SettingsPage(): Promise<JSX.Element> {
     const label = String(formData.get("rddLabel") ?? "").trim();
     const baseUrl = String(formData.get("rddBaseUrl") ?? "").trim().replace(/\/+$/, "");
     const token = String(formData.get("rddToken") ?? "").trim();
-    if (label === "" || baseUrl === "" || token === "") return;
+    if (label === "" || baseUrl === "") return;
+
+    // A blank key means "keep the one already stored", not "discard this
+    // edit". The field is always rendered empty, because a stored key is
+    // never shown again, so an operator fixing a label or a URL has nothing
+    // to re-paste. Returning early on a blank key — as this did — dropped
+    // their change with no error and no sign that anything had happened.
+    const existing = await prisma.rddSource.findUnique({
+      where: { tenantId: tid },
+      select: { id: true },
+    });
+    if (token === "" && existing === null) return;
 
     // Constrained to the allowlist in lib/polling/rdd.ts, not stored as typed.
     // A free-text disposition is how the write-back contract would be widened
@@ -128,14 +139,37 @@ export default async function SettingsPage(): Promise<JSX.Element> {
     const typed = String(formData.get("rddLiveDisposition") ?? "").trim().toLowerCase();
     const liveDisposition = isLiveDisposition(typed) ? typed : LIVE_DISPOSITIONS[0];
 
-    const sealed = await seal(token);
-    const fp = await fingerprint(token);
-    await prisma.rddSource.upsert({
-      where: { tenantId: tid },
-      create: { tenantId: tid, label, baseUrl, tokenSealed: sealed, tokenFingerprint: fp, liveDisposition },
-      // Pasting a key again is how an operator rotates one, so it un-revokes.
-      update: { label, baseUrl, tokenSealed: sealed, tokenFingerprint: fp, liveDisposition, revokedAt: null },
-    });
+    if (existing === null) {
+      await prisma.rddSource.create({
+        data: {
+          tenantId: tid,
+          label,
+          baseUrl,
+          tokenSealed: await seal(token),
+          tokenFingerprint: await fingerprint(token),
+          liveDisposition,
+        },
+      });
+    } else {
+      await prisma.rddSource.update({
+        where: { tenantId: tid },
+        data: {
+          label,
+          baseUrl,
+          liveDisposition,
+          // Only a new key rotates and un-revokes. A save that changes just
+          // the name or the URL leaves a revoked frame revoked, which is what
+          // revoking it meant.
+          ...(token === ""
+            ? {}
+            : {
+                tokenSealed: await seal(token),
+                tokenFingerprint: await fingerprint(token),
+                revokedAt: null,
+              }),
+        },
+      });
+    }
     revalidatePath("/admin/settings");
     revalidatePath("/admin/polls");
   }
@@ -302,16 +336,21 @@ export default async function SettingsPage(): Promise<JSX.Element> {
             <label className="label" htmlFor="rddToken">
               Bearer key
             </label>
+            {/* Required only when there is nothing stored to fall back on, so
+                the markup says what the action does: blank keeps the key. */}
             <input
               id="rddToken"
               name="rddToken"
               type="password"
               autoComplete="off"
               className="input font-mono text-xs"
-              required
+              required={rdd === null}
             />
             <p className="mt-2 text-xs text-ink/50">
-              Saving over an existing frame replaces its key and un-revokes it,
+              {rdd === null
+                ? "Paste the key the frame issued."
+                : "Leave blank to keep the key already stored. "}
+              Saving a key over an existing frame replaces it and un-revokes it,
               which is how to rotate one.
             </p>
           </div>

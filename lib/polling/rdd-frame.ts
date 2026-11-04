@@ -461,7 +461,11 @@ export async function reportFrameOutcomes(batch: PollBatch): Promise<ReportResul
     unassigned,
     live,
     undecided,
-    remaining: Math.max(0, pending.length - thisRun.length),
+    // Rejected dispositions were attempted and not recorded at the frame, so
+    // they still carry no disposition there and are eligible again on the
+    // next run. Counting only the unattempted tail let an operator press
+    // until the figure read zero with numbers still unreported.
+    remaining: Math.max(0, pending.length - thisRun.length) + rejected,
     rejected,
     error: firstError || undefined,
     reason:
