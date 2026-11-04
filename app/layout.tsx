@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     template: "%s · Polimeter",
   },
   description:
-    "Independent telephone polling across all nineteen Cayman Islands districts. Answers recorded live, results weighted to population targets, margin of error from the effective sample — and a plain warning when a figure is not fit to publish.",
+    "Independent Cayman Islands public opinion polling. Random-digit-dial samples drawn from the regulator-confirmed mobile frame, weighted to the electorate, with the margin of error shown — and a plain warning when a figure is not fit to publish.",
   applicationName: "Polimeter",
   authors: [{ name: "Cayworks" }],
   creator: "Cayworks",
@@ -36,6 +36,10 @@ export const metadata: Metadata = {
     "opinion poll Grand Cayman",
     "constituency polling Cayman",
     "market research Cayman Islands",
+    "random digit dial Cayman",
+    "probability sample Cayman Islands",
+    "election polling Cayman Islands",
+    "Cayman Islands pollster",
   ],
   alternates: { canonical: "/" },
   openGraph: {
@@ -45,13 +49,13 @@ export const metadata: Metadata = {
     url: SITE,
     title: "Polimeter — public opinion polling in the Cayman Islands",
     description:
-      "Telephone polling across all nineteen districts. Weighted, with the margin of error shown — and a plain warning when a figure is not fit to publish.",
+      "Random-digit-dial samples from the regulator-confirmed Cayman mobile frame. Weighted, with the margin of error shown — and a plain warning when a figure is not fit to publish.",
   },
   twitter: {
     card: "summary_large_image",
     title: "Polimeter — public opinion polling in the Cayman Islands",
     description:
-      "Telephone polling across all nineteen districts. Weighted, with the margin of error shown.",
+      "Random-digit-dial samples from the regulator-confirmed Cayman mobile frame. Weighted, with the margin of error shown.",
   },
   robots: {
     index: true,
@@ -101,7 +105,7 @@ const STRUCTURED_DATA = {
       provider: { "@id": `${SITE}/#organization` },
       areaServed: { "@type": "Country", name: "Cayman Islands" },
       description:
-        "Automated telephone interviewing across all nineteen Cayman Islands districts, with answers recorded during the call, results raked to population targets, margin of error computed from the effective sample, and a publication gate that marks a figure unfit to quote when its base or weighting will not support it.",
+        "Automated telephone interviewing on a random-digit-dial sample drawn from the 47 mobile exchanges the Cayman telecommunications regulator publishes as allocated, with answers recorded during the call, results raked to the registered electorate across the six areas, margin of error computed from the effective sample, and a publication gate that marks a figure unfit to quote when its base or weighting will not support it.",
     },
   ],
 };
