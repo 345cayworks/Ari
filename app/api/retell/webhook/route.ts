@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleWebhookEvent } from "@/lib/polling/calls";
-import { verifyRetellSignature, type RetellWebhookEvent } from "@/lib/polling/retell";
+import { retellSignatureProblem, type RetellWebhookEvent } from "@/lib/polling/retell";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +8,13 @@ export const dynamic = "force-dynamic";
 // Retell call events: call_started, call_ended, call_analyzed.
 export async function POST(req: Request): Promise<NextResponse> {
   const raw = await req.text();
-  if (!verifyRetellSignature(raw, req.headers.get("x-retell-signature"))) {
+  const problem = retellSignatureProblem(raw, req.headers.get("x-retell-signature"));
+  if (problem !== null) {
+    // Logged, not just returned. A rejected webhook used to produce a bare
+    // 401 and nothing else, so a wrong signing key looked exactly like no
+    // traffic at all: calls simply stopped appearing and the only way to find
+    // out was to hold `wrangler tail` open while a call ran.
+    console.error(`Retell webhook rejected: ${problem}`);
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 

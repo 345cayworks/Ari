@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleFunctionCall } from "@/lib/polling/calls";
-import { verifyRetellSignature, type RetellFunctionRequest } from "@/lib/polling/retell";
+import { retellSignatureProblem, type RetellFunctionRequest } from "@/lib/polling/retell";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +9,14 @@ export const dynamic = "force-dynamic";
 // The JSON we return is read by the agent's LLM, so keep it short.
 export async function POST(req: Request): Promise<NextResponse> {
   const raw = await req.text();
-  if (!verifyRetellSignature(raw, req.headers.get("x-retell-signature"))) {
+  const problem = retellSignatureProblem(raw, req.headers.get("x-retell-signature"));
+  if (problem !== null) {
+    // Louder here than on the webhook, if anything. This route carries
+    // `record_answer`, so a rejected signature means a respondent answered
+    // and the answer was thrown away while the interview carried on sounding
+    // perfectly normal. Nothing downstream can tell that apart from a
+    // respondent who declined to answer.
+    console.error(`Retell function call rejected: ${problem}`);
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 

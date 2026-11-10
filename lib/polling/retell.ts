@@ -40,22 +40,76 @@ export interface RetellFunctionRequest {
 
 // Same scheme as retell-sdk's `verify`: header is "v=<ms>,d=<hex>", where
 // hex = HMAC-SHA256(apiKey, rawBody + ms). Rejects stale timestamps.
-export function verifyRetellSignature(
+/**
+ * The key Retell signs webhooks with, which is not necessarily the one used to
+ * call the API.
+ *
+ * A Retell account can hold several API keys and only the one carrying the
+ * "webhook badge" in the dashboard signs webhooks — the others remain
+ * perfectly valid for API requests. That asymmetry produces a failure with no
+ * obvious cause: outbound calls succeed, so the credential looks right, while
+ * every inbound webhook is rejected as forged.
+ *
+ * So verification reads `RETELL_WEBHOOK_KEY` first and falls back to
+ * `RETELL_API_KEY`. Leaving it unset preserves today's behaviour exactly.
+ */
+function webhookSigningKey(): string | undefined {
+  return process.env.RETELL_WEBHOOK_KEY ?? process.env.RETELL_API_KEY;
+}
+
+/**
+ * Why a signature was rejected, or null when it is good.
+ *
+ * Separated from the boolean because the three failures mean entirely
+ * different things and the caller could not tell them apart. A malformed
+ * header is a sender that is not Retell. A stale timestamp is a replay or a
+ * clock. A digest mismatch is the right sender and the wrong key — and that
+ * one is indistinguishable from an attack unless somebody says so out loud,
+ * which is why webhook ingestion was failing unnoticed for weeks: a 401 was
+ * returned, nothing was logged, and the only visible symptom was calls
+ * quietly not appearing.
+ */
+export function retellSignatureProblem(
   rawBody: string,
   signature: string | null,
-  apiKey = process.env.RETELL_API_KEY
-): boolean {
-  if (!apiKey || !signature) return false;
+  apiKey = webhookSigningKey()
+): string | null {
+  if (!apiKey) return "no signing key is configured (RETELL_WEBHOOK_KEY or RETELL_API_KEY)";
+  if (!signature) return "no x-retell-signature header";
   const match = /^v=(\d+),d=([0-9a-f]{64})$/i.exec(signature);
-  if (!match) return false;
+  if (!match) return "the x-retell-signature header is not v=<ms>,d=<64 hex>";
   const timestamp = Number(match[1]);
-  if (Math.abs(Date.now() - timestamp) > SIGNATURE_MAX_AGE_MS) return false;
+  const skew = Date.now() - timestamp;
+  if (Math.abs(skew) > SIGNATURE_MAX_AGE_MS) {
+    return `the signature timestamp is ${Math.round(skew / 1000)}s away, outside the ${
+      SIGNATURE_MAX_AGE_MS / 1000
+    }s window`;
+  }
 
   const expected = createHmac("sha256", apiKey)
     .update(rawBody + match[1])
     .digest();
   const given = Buffer.from(match[2], "hex");
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    // Names the likely cause rather than only the symptom. No key material:
+    // the digest of a signature we rejected is not a secret, and the body it
+    // was computed over is the sender's, not ours.
+    return (
+      "the digest does not match. The body and timestamp parsed, so this is " +
+      "the right shape signed with a different key — in Retell only the API " +
+      "key carrying the webhook badge signs webhooks, and the others still " +
+      "work for API calls. Set RETELL_WEBHOOK_KEY to the badged one."
+    );
+  }
+  return null;
+}
+
+export function verifyRetellSignature(
+  rawBody: string,
+  signature: string | null,
+  apiKey = webhookSigningKey()
+): boolean {
+  return retellSignatureProblem(rawBody, signature, apiKey) === null;
 }
 
 export async function retellApi<T = any>(
