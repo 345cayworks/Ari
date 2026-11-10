@@ -435,6 +435,45 @@ itself that it "has no legal standing". The table was transcribed by hand on
 is corrected — so `SOURCED_AT` is shown in the UI and `check:numbers` fails on
 a row count that has moved, which only helps once somebody runs it.
 
+## Webhook ingestion looks unreliable, and reconcile has been carrying it
+
+Found on 2026-11-10 while fixing the Retell deprecation. Pressing "Check for
+missed calls" pulled in **5 calls that should already have been there**, three
+of them from the same day — one completed interview from two hours earlier.
+
+The tempting conclusion was that the canonical-host switch on 2026-11-03 broke
+webhook delivery. The data does not support it. Ingest lag across every
+`PollCall` row:
+
+| call started | row created | gap |
+|---|---|---|
+| 2026-10-26 06:38 | 07:35:16 | 57 min |
+| 2026-10-26 06:41 | 07:35:14 | 54 min |
+| 2026-10-26 07:06 | 07:20:25 | 13 min |
+| 2026-10-26 07:25-07:26 | 07:35:08-12 | 9-10 min |
+| 2026-10-28 06:05 | 09:34:42 | 3.5 h |
+| 2026-11-03 00:21 | 00:24:22 | 2.5 min |
+| 2026-11-04 07:52-07:53 | 2026-11-11 03:28 | 7 days |
+| 2026-11-11 00:54-02:50 | 2026-11-11 03:27 | 37 min - 2.5 h |
+
+Six of the 10-26 rows were written within eight seconds of one another, which
+is a reconcile pass and not six independent deliveries. Only the 11-03 row has
+a latency a webhook would explain. So the pattern predates the host switch,
+and the honest reading is that reconcile has been the real ingestion path for
+some time while the webhook delivered rarely or never.
+
+**Not diagnosed.** Established: the agent's `webhook_url` reads
+`https://polimeter.cayworks.net/api/retell/webhook`; that endpoint answers 401
+to an unsigned POST, so it is reachable and guarded; no per-call webhook
+override is sent at call creation; phone numbers expose no webhook field. Not
+established: whether Retell posts at all, or posts and is rejected. The
+difference is visible in one run — hold `npx wrangler tail` open, place one
+call, and watch for a POST to `/api/retell/webhook`. A 401 means the signature
+check; nothing at all means Retell is not sending.
+
+**Meanwhile interviews are still recorded**, because reconcile works again and
+is idempotent. It is a button somebody has to press, not a pipeline.
+
 ## Open risks
 
 - **`{{time_of_day}}`** in the repo prompt is supplied by nothing. Moot while
