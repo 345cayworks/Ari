@@ -278,16 +278,43 @@ export interface ReconcileResult {
 // results, which for a poll means quietly undercounting. So pull the agent's
 // recent calls and ingest any this poll has no row for, through the same path
 // the webhook uses. Idempotent: upsertPollCall keys on the unique retellCallId.
+/**
+ * What a versioned Retell list endpoint returns.
+ *
+ * The bare-array arm is deliberate: it costs one `Array.isArray` and means a
+ * partial rollout, a replay against an older host, or a future endpoint that
+ * has not been converted yet degrades to "read what came back" rather than to
+ * "report nothing and call it success".
+ */
+type RetellCallPage = { items?: RetellCall[]; pagination_key?: string; has_more?: boolean } | RetellCall[];
+
 export async function reconcilePollCalls(poll: Poll, limit = 200): Promise<ReconcileResult> {
   const agentId = poll.retellAgentId ?? process.env.RETELL_AGENT_ID;
-  const calls = await retellApi<RetellCall[]>("POST", "/v2/list-calls", {
+  // `/v3/list-calls`, not `/v2`. Retell retired the legacy list endpoints on
+  // 15 June 2026 and the old path now answers 400, which is what crashed this
+  // button in production — nothing here changed, the endpoint was switched off
+  // at the far end.
+  //
+  // The response shape changed with the path: v2 returned a bare array, v3
+  // returns `{ items, pagination_key, has_more }`. That matters more than the
+  // path does. The loop below used to read `Array.isArray(calls) ? calls : []`,
+  // so a path-only bump would have turned a loud 400 into an empty array and
+  // this would have reported "Nothing missing" forever while calls went
+  // unrecorded. The array branch is kept only to tolerate a partial rollout.
+  //
+  // Still one page. `limit` is the bound, the Worker has a finite subrequest
+  // budget, and every scanned call costs at least one query — following
+  // `pagination_key` to exhaustion would turn a button into an outage. Recent
+  // calls are what this reconciles, and 200 filtered to this agent covers it.
+  const page = await retellApi<RetellCallPage>("POST", "/v3/list-calls", {
     ...(agentId ? { filter_criteria: { agent_id: [agentId] } } : {}),
     limit,
     sort_order: "descending",
   });
+  const calls = Array.isArray(page) ? page : (page?.items ?? []);
 
   const result: ReconcileResult = { scanned: 0, ingested: 0, alreadyPresent: 0, otherPoll: 0 };
-  for (const call of Array.isArray(calls) ? calls : []) {
+  for (const call of calls) {
     if (!call?.call_id) continue;
     result.scanned += 1;
 

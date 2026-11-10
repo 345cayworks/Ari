@@ -60,7 +60,18 @@ async function main(): Promise<void> {
 
   // Don't quietly create a second agent on a re-run.
   if (!args.has("--force") && !dryRun) {
-    const existing = (await retellApi("GET", "/list-agents")) as { agent_id: string; agent_name?: string }[];
+    // `POST /v2/list-agents`, not `GET /list-agents`: the legacy list
+    // endpoints were retired on 15 June 2026 and the old path answers 400.
+    //
+    // **Unwrap the envelope or this guard inverts.** It exists to stop a
+    // re-run creating a second agent, and it decides by searching the list.
+    // A versioned endpoint returns `{ items }`, so reading the response as an
+    // array yields nothing, nothing matches, and the duplicate this was
+    // written to prevent gets created — a failure that looks like success.
+    const listed = (await retellApi("POST", "/v2/list-agents", { limit: 1000 })) as
+      | { items?: { agent_id: string; agent_name?: string }[] }
+      | { agent_id: string; agent_name?: string }[];
+    const existing = Array.isArray(listed) ? listed : (listed.items ?? []);
     const clash = existing.find((a) => a.agent_name === agentName);
     if (clash) {
       throw new Error(

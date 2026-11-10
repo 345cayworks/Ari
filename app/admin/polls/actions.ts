@@ -90,13 +90,29 @@ export async function updatePoll(formData: FormData): Promise<void> {
 // Pulls in calls Retell never delivered a webhook for. Safe to press twice.
 export async function reconcileCalls(formData: FormData): Promise<void> {
   const poll = await requirePoll(field(formData, "pollId"));
-  const r = await reconcilePollCalls(poll);
+
+  // Retell's failure is shown, not thrown. This call goes to somebody else's
+  // API, so it can fail for reasons that have nothing to do with this
+  // platform — a rate limit, an outage, or an endpoint retired without us
+  // noticing, which is exactly what happened on 2026-11-10: the legacy
+  // `/v2/list-calls` began answering 400 and the unhandled throw became a
+  // full-page "server-side exception", with the actual cause visible only in
+  // the Worker log. An operator should be told which vendor failed and why.
+  let r;
+  try {
+    r = await reconcilePollCalls(poll);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    redirect(
+      `/admin/polls/${poll.id}?tab=calls&error=${encodeURIComponent(message.slice(0, 300))}`,
+    );
+  }
   revalidatePath(`/admin/polls/${poll.id}`);
   const q = new URLSearchParams({
     tab: "calls",
-    reconciled: String(r.ingested),
-    scanned: String(r.scanned),
-    present: String(r.alreadyPresent),
+    reconciled: String(r!.ingested),
+    scanned: String(r!.scanned),
+    present: String(r!.alreadyPresent),
   });
   redirect(`/admin/polls/${poll.id}?${q}`);
 }
