@@ -90,7 +90,12 @@ function divergingFills(live: string[]): string[] {
   });
 }
 
-function fillsFor(answers: string[]): Map<string, string> {
+/**
+ * Exported so the shareable card in `lib/polling/results-card.ts` colours an
+ * answer the same way this chart does. Two palettes for one poll would be a
+ * quiet way for a graphic to contradict the screen it came from.
+ */
+export function fillsFor(answers: string[]): Map<string, string> {
   const live = answers.filter((a) => !isNeutralAnswer(a));
   const shades = isOrderedScale(answers)
     ? divergingFills(live)

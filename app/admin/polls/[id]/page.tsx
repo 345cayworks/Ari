@@ -290,12 +290,24 @@ async function ResultsTab({
       ) : (
         <div className="space-y-4">
           {tallies.map((t) => (
-            <QuestionChart
-              key={t.questionId}
-              tally={t}
-              weighted={Boolean(weighting)}
-              effectiveBase={effectiveBase}
-            />
+            <div key={t.questionId} className="space-y-2">
+              <QuestionChart
+                tally={t}
+                weighted={Boolean(weighting)}
+                effectiveBase={effectiveBase}
+              />
+              {/* The card is built from this same tally, so what downloads is
+                  what is on screen above it. It carries the publication gate's
+                  verdict with it: a figure the gate refuses is stamped on the
+                  graphic rather than quietly exported clean. */}
+              <a
+                href={`/admin/polls/${poll.id}/card?q=${encodeURIComponent(t.questionId)}`}
+                className="inline-flex items-center py-2 text-xs text-sea-deep hover:underline"
+                download
+              >
+                Download this result as a shareable card (SVG)
+              </a>
+            </div>
           ))}
         </div>
       )}

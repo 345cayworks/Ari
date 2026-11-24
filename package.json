@@ -2,7 +2,7 @@
   "name": "ari",
   "version": "0.1.0",
   "private": true,
-  "description": "Ari \u2014 your personal AI chief of staff. Cayworks platform.",
+  "description": "Ari — your personal AI chief of staff. Cayworks platform.",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
@@ -22,6 +22,7 @@
     "retell:create-agent": "tsx --env-file-if-exists=.env.local scripts/retell-create-agent.ts",
     "check:delivery": "tsx scripts/check-delivery.ts",
     "check:numbers": "tsx scripts/check-numbers.ts",
+    "check:card": "tsx scripts/check-results-card.ts",
     "show:delivery": "tsx --env-file-if-exists=.env.local scripts/show-delivery.ts",
     "check:secret-box": "tsx scripts/check-secret-box.ts",
     "check:rdd": "tsx scripts/check-rdd.ts"
@@ -37,6 +38,7 @@
     "next": "^15.5.28",
     "next-auth": "^5.0.0-beta.32",
     "pg": "^8.23.1",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tailwind-merge": "^2.5.4",
@@ -50,6 +52,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.5.28",
+    "jsqr": "^1.4.0",
     "postcss": "^8.4.49",
     "prisma": "^6.19.3",
     "tailwindcss": "^3.4.14",
