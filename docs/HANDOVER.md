@@ -37,7 +37,7 @@ Everything below was verified against the live deployment, not just built:
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
-| Worker carrying the sender | deployed, version `bb774992-fa24-476c-b151-49c3e34e53a5`, 2.17 MB gzipped. **Keep this line current — it sat at `6fabc844` through two deploys** because it was updated for the host switch and then forgotten.  `polimeter.cayworks.net` is canonical and serves; `polling.cayworks.net` 308s to it with the path preserved, and all four Retell URLs plus the Telegram webhook were moved to the canonical host first. Confirmed live: `/robots.txt`, `/sitemap.xml` and `/icon.svg` all serve with the right content types, and the word "nineteen" no longer appears anywhere in the page HTML — the landing page claimed calls "across all nineteen districts" in six places and the platform does not do that; it rakes to six areas and the frame has no geography at all. Also confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt, the number screener and the RDD sampling frame. PR #1 is merged (`67ab48c`) and the `20261103T160000_rdd_frame` migration is applied to Neon — verified by reading the schema back: `RddSource` present, twelve `rdd*` columns on `PollBatch` all nullable or defaulted, existing rows untouched. The Calls tab was loaded signed in afterwards and shows the frame panel above the list screener, both rendering. The frame is **configured**: `RddSource` row "Cayman mobile RDD frame", base `https://cayman-rdd.delicate-wood-499a.workers.dev`, live disposition `live`, key fingerprint `03bc71df` — matched against the fingerprint computed locally from `RDD_TOKEN` before saving, which is what confirms the key that landed is the key intended rather than a paste that went astray. No draw has been made |
+| Worker carrying the sender | deployed, version `8920c1f7-1a4c-435a-9960-1ea27c3031d2`, 2.19 MB gzipped (885 KB of headroom left under the 3 MB ceiling). **Keep this line current — it sat at `6fabc844` through two deploys** because it was updated for the host switch and then forgotten.  `polimeter.cayworks.net` is canonical and serves; `polling.cayworks.net` 308s to it with the path preserved, and all four Retell URLs plus the Telegram webhook were moved to the canonical host first. Confirmed live: `/robots.txt`, `/sitemap.xml` and `/icon.svg` all serve with the right content types, and the word "nineteen" no longer appears anywhere in the page HTML — the landing page claimed calls "across all nineteen districts" in six places and the platform does not do that; it rakes to six areas and the frame has no geography at all. Also confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt, the number screener and the RDD sampling frame. PR #1 is merged (`67ab48c`) and the `20261103T160000_rdd_frame` migration is applied to Neon — verified by reading the schema back: `RddSource` present, twelve `rdd*` columns on `PollBatch` all nullable or defaulted, existing rows untouched. The Calls tab was loaded signed in afterwards and shows the frame panel above the list screener, both rendering. The frame is **configured**: `RddSource` row "Cayman mobile RDD frame", base `https://cayman-rdd.delicate-wood-499a.workers.dev`, live disposition `live`, key fingerprint `03bc71df` — matched against the fingerprint computed locally from `RDD_TOKEN` before saving, which is what confirms the key that landed is the key intended rather than a paste that went astray. No draw has been made |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -495,6 +495,54 @@ the interview continues sounding normal.
 
 **Meanwhile interviews are still recorded**, because reconcile works again and
 is idempotent. It is a button somebody has to press, not a pipeline.
+
+## Shareable results cards
+
+Two SVG cards at `app/admin/polls/[id]/card/route.ts`, downloadable from the
+Results tab: `?q=<questionId>` for one question at 1200x630, `?all=1` for
+every question on one sheet whose height grows with the content.
+
+**They are built from the page's own numbers, not their own.**
+`loadPollResults` for the tallies, `weighting.marginOfError` for the single
+margin the disclosure block quotes, `publicationBlockers` for the gate, and
+`fillsFor` — exported from `components/poll-charts.tsx` for this — for the
+colours. One `common` object feeds both builders. A graphic that rounded or
+coloured differently from the chart above it would be two answers to one
+question, both of them ours, with no way afterwards to tell which had left
+the building.
+
+**The gate travels with the card.** A figure the blockers refuse is stamped
+NOT FIT TO PUBLISH with the reason, on the graphic. The moment a number
+leaves the building is when that warning stops being optional, and a card
+that exported clean would undo the publication gate at exactly that point.
+
+**SVG rather than `next/og`.** That library rasterises with a few hundred KB
+of WASM, against 885 KB of headroom, for something that is text, rectangles
+and a QR. The cost is that SVG has no text wrapping, so `wrapText` estimates
+at 0.52em per character and errs towards wrapping early — a question running
+off the edge is the failure that matters. **SVG will not preview as an image
+on WhatsApp, X or Facebook.** It is right for print, for Canva and for
+resizing; posting needs a PNG, which means a rasteriser here or a conversion
+step at the other end.
+
+**The QR is generated, never hand-rolled.** QR needs Reed-Solomon over
+GF(256), mask selection and BCH format bits, and getting any of it subtly
+wrong yields a code that looks right and does not scan — a failure invisible
+to everyone until a reader points a phone at it. `qrcode-generator` draws it
+(21 KB gzipped, the only runtime dependency added for this) and
+`npm run check:card` rasterises the matrix and decodes it with `jsqr`,
+asserting the decoded string equals the URL character for character, for
+three URLs including one with a query string. The standing rule is that a
+deliverable carrying a URL carries a QR to that same URL and never another.
+
+36 assertions. They also cover XML escaping, because one unescaped ampersand
+in a question produces a document no renderer will open, and the wording of a
+poll nobody has written yet decides whether that happens.
+
+**Not yet exercised against a real poll.** The route is behind a session; it
+answers 403 unauthenticated, so it loads, but no card has been generated from
+live tallies. On the TEST poll it will come out stamped, since 3 completed
+interviews is far below the base floor.
 
 ## Open risks
 
