@@ -79,22 +79,33 @@ export default async function PollPage(props: {
         </div>
       </div>
 
-      <nav className="flex gap-1 border-b border-ink/10">
-        {TABS.map(([t, label]) => (
-          <Link
-            key={t}
-            href={`/admin/polls/${poll.id}?tab=${t}`}
-            className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-sm transition",
-              tab === t
-                ? "border-ink font-semibold text-ink"
-                : "border-transparent text-ink/60 hover:text-ink"
-            )}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
+      {/* Scrolls sideways rather than wrapping or squashing. Five tabs at
+          px-3 come to roughly 350-400px of content against 343px of usable
+          width on a 375px phone, so this row did not fit and pushed the whole
+          page into a horizontal scroll. `min-w-max` keeps the underline
+          spanning all five rather than stopping at the fold, and the outer
+          div is what scrolls so the active tab's -mb-px is not clipped.
+          `components/admin/nav.tsx` already did this; this row was missed. */}
+      <div className="overflow-x-auto">
+        <nav className="flex min-w-max gap-1 border-b border-ink/10">
+          {TABS.map(([t, label]) => (
+            <Link
+              key={t}
+              href={`/admin/polls/${poll.id}?tab=${t}`}
+              className={cn(
+                // py-3 on a phone: py-2 gives a 32px target, under the 44px
+                // a thumb needs. Desktop keeps its tighter row.
+                "-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-3 text-sm transition sm:py-2",
+                tab === t
+                  ? "border-ink font-semibold text-ink"
+                  : "border-transparent text-ink/60 hover:text-ink"
+              )}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+      </div>
 
       {searchParams.error && (
         <Banner tone="error">{searchParams.error}</Banner>

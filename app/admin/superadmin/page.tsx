@@ -98,7 +98,7 @@ export default async function SuperAdminPage(): Promise<JSX.Element> {
         <p className="text-sm text-ink/60">
           Toggle Ari's capabilities as we ship subsequent phases.
         </p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(
             [
               ["gmail", "Gmail (Phase 2)"],

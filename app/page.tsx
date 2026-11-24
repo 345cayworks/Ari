@@ -118,7 +118,12 @@ export default function HomePage(): JSX.Element {
     <main className="min-h-screen bg-sand">
       <header className="border-b border-ink/[0.07]">
         <div className="container-tight flex items-center justify-between py-5">
-          <Link href="/" className="flex items-baseline gap-2.5">
+          {/* `-my-2 py-2` on these: the padding lifts each control to a
+              44px touch target without moving anything, because the negative
+              margin gives the space straight back to the layout. The header
+              and footer links measured 20-28px, which is a thumb's width
+              short. */}
+          <Link href="/" className="-my-2 flex items-baseline gap-2.5 py-2">
             <span className="font-serif text-xl font-semibold tracking-tight text-ink">
               Polimeter
             </span>
@@ -127,16 +132,16 @@ export default function HomePage(): JSX.Element {
             </span>
           </Link>
           <nav className="flex items-center gap-6 text-sm">
-            <a href="#frame" className="hidden text-ink/60 transition hover:text-ink sm:inline">
+            <a href="#frame" className="-my-3 hidden py-3 text-ink/60 transition hover:text-ink sm:inline-flex sm:items-center">
               Sampling
             </a>
-            <a href="#method" className="hidden text-ink/60 transition hover:text-ink sm:inline">
+            <a href="#method" className="-my-3 hidden py-3 text-ink/60 transition hover:text-ink sm:inline-flex sm:items-center">
               Method
             </a>
-            <a href="#standards" className="hidden text-ink/60 transition hover:text-ink sm:inline">
+            <a href="#standards" className="-my-3 hidden py-3 text-ink/60 transition hover:text-ink sm:inline-flex sm:items-center">
               Standards
             </a>
-            <Link href="/admin/login" className="text-ink/60 transition hover:text-ink">
+            <Link href="/admin/login" className="-my-3 inline-flex items-center py-3 text-ink/60 transition hover:text-ink">
               Sign in
             </Link>
           </nav>
@@ -384,7 +389,7 @@ export default function HomePage(): JSX.Element {
             Polimeter is a Cayworks platform. © {new Date().getFullYear()} Cayworks, Cayman
             Islands.
           </p>
-          <a href="mailto:info@cayworks.com" className="transition hover:text-ink/70">
+          <a href="mailto:info@cayworks.com" className="-my-3 inline-flex items-center py-3 transition hover:text-ink/70">
             info@cayworks.com
           </a>
         </div>

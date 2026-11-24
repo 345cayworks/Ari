@@ -99,6 +99,11 @@ export async function WeightingTab({
             );
           })}
 
+          {/* Two columns at every width on purpose, and the only grid in the
+              admin without a responsive variant. These are two short numeric
+              fields capped at max-w-sm: about 148px each on a 375px phone,
+              which reads better side by side than stacked, because a min and
+              a max belong together. Left alone deliberately, not missed. */}
           <div className="grid gap-4 grid-cols-2 max-w-sm border-t border-ink/5 pt-5">
             <div>
               <label className="label" htmlFor="trimMin">Min weight</label>
