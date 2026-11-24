@@ -289,6 +289,17 @@ async function ResultsTab({
         <div className="card text-sm text-ink/60">No answers yet.</div>
       ) : (
         <div className="space-y-4">
+          {/* One sheet for the whole poll, beside the per-question cards
+              below. Same tallies, same gate, same colours — only the layout
+              differs, so a topline and a single-question card pulled from the
+              same poll cannot contradict each other. */}
+          <a
+            href={`/admin/polls/${poll.id}/card?all=1`}
+            className="inline-flex items-center py-2 text-sm text-sea-deep hover:underline"
+            download
+          >
+            Download all {tallies.length} question{tallies.length === 1 ? "" : "s"} as one topline card (SVG)
+          </a>
           {tallies.map((t) => (
             <div key={t.questionId} className="space-y-2">
               <QuestionChart

@@ -21,6 +21,8 @@ import jsQR from "jsqr";
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
+  consolidatedCardSvg,
+  MAX_QUESTIONS,
   MAX_ROWS,
   qrMatrix,
   resultsCardSvg,
@@ -156,6 +158,61 @@ function main(): void {
   });
   check(`only ${MAX_ROWS} rows are drawn`, (many.match(/<\/text><rect/g) ?? []).length <= MAX_ROWS);
   check("and the rest are declared, not dropped silently", many.includes("+3 further answers not shown"));
+
+  console.log("");
+  console.log("The consolidated sheet");
+  const q = (n: number) => ({
+    question: `Question ${n}: how do you feel about topic ${n}?`,
+    base: 600 - n,
+    answers: [
+      { answer: "Agree", share: 0.52, fill: "#1c5cab" },
+      { answer: "Disagree", share: 0.33, fill: "#c2362f" },
+      { answer: "Don't know", share: 0.15, fill: "#b9b5ad" },
+    ],
+  });
+  const sheetOf = (n: number) =>
+    consolidatedCardSvg({
+      pollName: "Cayman Pulse — November 2026",
+      questions: Array.from({ length: n }, (_, i) => q(i + 1)),
+      base: 612,
+      marginPoints: 4.3,
+      weighted: true,
+      fieldwork: "2 November 2026 to 5 November 2026",
+      companyName: "CayWorks",
+      url: "https://polimeter.cayworks.net",
+      blockers: [],
+    });
+
+  const three = sheetOf(3);
+  const eight = sheetOf(8);
+  const h = (svg: string) => Number(/height="(\d+)"/.exec(svg)![1]);
+  check("every question is drawn", [1, 2, 3].every((n) => three.includes(`Question ${n}:`)));
+  check("width matches the single card, so the two sit together", three.includes(`width="${CARD_WIDTH}"`));
+  // The point of the layout: a three-question poll must not be mostly blank
+  // and an eight-question one must not be squashed into the same box.
+  check("height grows with the content", h(eight) > h(three), `3q=${h(three)} 8q=${h(eight)}`);
+  check("each question carries its own base", three.includes("n = 599") && three.includes("n = 598"));
+  check("the overall margin is stated once", (three.match(/±4\.3 pts at 95%/g) ?? []).length === 1);
+  check("the QR is on the sheet too", /<path d="M[\d.]+ [\d.]+h/.test(three));
+
+  const blockedSheet = consolidatedCardSvg({
+    pollName: "P", questions: [q(1)], base: 40, marginPoints: null, weighted: false,
+    fieldwork: "", companyName: "", url: "https://polimeter.cayworks.net",
+    blockers: ["base below 100"],
+  });
+  check("the gate reaches the sheet", blockedSheet.includes("NOT FIT TO PUBLISH"));
+  check("and a fit sheet has no stamp", !three.includes("NOT FIT TO PUBLISH"));
+
+  const manyQs = sheetOf(MAX_QUESTIONS + 4);
+  check(`at most ${MAX_QUESTIONS} questions are drawn`, !manyQs.includes(`Question ${MAX_QUESTIONS + 1}:`));
+  check("and the remainder is declared", manyQs.includes("+4 further questions not shown"));
+  check(
+    "an ampersand in a question is escaped here too",
+    consolidatedCardSvg({
+      pollName: "P & Q", questions: [{ ...q(1), question: "A & B?" }], base: 10, marginPoints: null,
+      weighted: false, fieldwork: "", companyName: "", url: "https://polimeter.cayworks.net", blockers: [],
+    }).includes("&amp;"),
+  );
 
   console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);

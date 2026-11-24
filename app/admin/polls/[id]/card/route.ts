@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { fillsFor } from "@/components/poll-charts";
 import { publicationBlockers } from "@/lib/polling/publication";
 import { compareQuestionIds } from "@/lib/polling/results";
-import { resultsCardSvg } from "@/lib/polling/results-card";
+import { consolidatedCardSvg, resultsCardSvg } from "@/lib/polling/results-card";
 import { loadPollResults } from "@/lib/polling/weighted";
 
 export const dynamic = "force-dynamic";
@@ -47,9 +47,10 @@ export async function GET(
     return NextResponse.json({ error: "this poll has no answers yet" }, { status: 409 });
   }
 
+  const qs = new URL(req.url).searchParams;
   // `?q=` picks the question; without it, the first in canonical order, which
   // is the one the Results tab shows first.
-  const wanted = new URL(req.url).searchParams.get("q");
+  const wanted = qs.get("q");
   const ordered = [...tallies].sort((a, b) => compareQuestionIds(a.questionId, b.questionId));
   const tally = (wanted && ordered.find((t) => t.questionId === wanted)) || ordered[0]!;
 
@@ -79,6 +80,46 @@ export async function GET(
     first && last ? (fmt(first) === fmt(last) ? fmt(first) : `${fmt(first)} to ${fmt(last)}`) : "";
 
   const vars = (poll.variables ?? {}) as Record<string, string>;
+  const common = {
+    pollName: vars.poll_name || poll.name,
+    marginPoints: weighting ? weighting.marginOfError : null,
+    weighted: Boolean(weighting),
+    fieldwork,
+    companyName: vars.company_name ?? "",
+    url: "https://polimeter.cayworks.net",
+    blockers: publicationBlockers(answered, weighting),
+  };
+
+  // `?all=1` is every question on one sheet. Same inputs, same gate, same
+  // colours — only the layout differs, so the two cards cannot disagree.
+  if (qs.get("all") !== null) {
+    const sheet = consolidatedCardSvg({
+      ...common,
+      base: answered,
+      questions: ordered.map((t) => {
+        const f = fillsFor(t.answers.map((a) => a.answer));
+        const d = weighting ? t.totalWeight : t.total;
+        return {
+          question: t.text ?? t.questionId,
+          base: t.total,
+          answers: t.answers.map((a) => ({
+            answer: a.answer,
+            share: d > 0 ? (weighting ? a.weight : a.count) / d : 0,
+            fill: f.get(a.answer) ?? "#b9b5ad",
+          })),
+        };
+      }),
+    });
+    const name = `${poll.name.replace(/[^\w-]+/g, "_").slice(0, 40) || "poll"}-topline`;
+    return new NextResponse(sheet, {
+      headers: {
+        "content-type": "image/svg+xml; charset=utf-8",
+        "content-disposition": `attachment; filename="${name}.svg"`,
+        "cache-control": "no-store",
+      },
+    });
+  }
+
   const svg = resultsCardSvg({
     pollName: vars.poll_name || poll.name,
     question: tally.text ?? tally.questionId,

@@ -210,3 +210,137 @@ ${hidden > 0 ? `<text x="${pad}" y="${barTop + rows.length * rowH + 22}" font-si
 ${qrPath(input.url, CARD_WIDTH - pad - 88, CARD_HEIGHT - 148, 88)}
 </svg>`;
 }
+
+// --- The whole poll on one card ----------------------------------
+
+/** Questions beyond this are counted rather than drawn, so the card stays a card. */
+export const MAX_QUESTIONS = 10;
+
+export interface ConsolidatedCardInput {
+  pollName: string;
+  questions: { question: string; answers: ResultsCardAnswer[]; base: number }[];
+  /** Respondents overall, which is what the margin is computed over. */
+  base: number;
+  marginPoints: number | null;
+  weighted: boolean;
+  fieldwork: string;
+  companyName: string;
+  url: string;
+  blockers: string[];
+}
+
+/**
+ * Every question's full distribution on one sheet — a topline, not a headline.
+ *
+ * Height grows with the content rather than being fixed at 630: a three
+ * question poll would otherwise be mostly whitespace and a ten question one
+ * illegible. The width stays 1200 so the two cards sit together.
+ *
+ * It shows each question's whole distribution rather than only its leading
+ * answer. A topline that prints "Dissatisfied 37%" and drops the other four
+ * rows tells you the winner and hides the shape — whether the rest split
+ * evenly or stacked behind one rival changes what the number means, and this
+ * platform's whole argument is against figures that travel without their
+ * context.
+ */
+export function consolidatedCardSvg(input: ConsolidatedCardInput): string {
+  const pad = 64;
+  const unfit = input.blockers.length > 0;
+  const shown = input.questions.slice(0, MAX_QUESTIONS);
+  const hiddenQs = input.questions.length - shown.length;
+
+  const headerH = unfit ? 210 : 168;
+  const rowH = 30;
+  const qGap = 26;
+
+  // Lay out first, measure, then draw — the height is not known until every
+  // question has been wrapped.
+  type Block = { lines: string[]; answers: ResultsCardAnswer[]; hidden: number; base: number; top: number };
+  const blocks: Block[] = [];
+  let y = headerH;
+  for (const q of shown) {
+    const lines = wrapText(q.question, CARD_WIDTH - pad * 2, 21, 2);
+    const answers = q.answers.slice(0, MAX_ROWS);
+    blocks.push({ lines, answers, hidden: q.answers.length - answers.length, base: q.base, top: y });
+    y += lines.length * 27 + 10 + answers.length * rowH + (q.answers.length > answers.length ? 20 : 0) + qGap;
+  }
+  const footerTop = y + (hiddenQs > 0 ? 26 : 0);
+  const height = footerTop + 150;
+
+  const labelW = 270;
+  const trackX = pad + labelW + 20;
+  const trackW = CARD_WIDTH - pad - trackX - 82;
+
+  const body = blocks
+    .map((b) => {
+      const qText = b.lines
+        .map(
+          (l, i) =>
+            `<text x="${pad}" y="${b.top + 20 + i * 27}" font-size="21" font-weight="600" fill="${INK}">${esc(l)}</text>`,
+        )
+        .join("");
+      const barsTop = b.top + b.lines.length * 27 + 10;
+      const bars = b.answers
+        .map((a, i) => {
+          const ry = barsTop + i * rowH;
+          const pct = Math.round(a.share * 100);
+          const w = Math.max(2, Math.round(trackW * Math.max(0, Math.min(1, a.share))));
+          const label = wrapText(a.answer, labelW, 16, 1)[0] ?? "";
+          return [
+            `<text x="${pad}" y="${ry + 15}" font-size="16" fill="${INK}" fill-opacity="0.85">${esc(label)}</text>`,
+            `<rect x="${trackX}" y="${ry + 3}" width="${trackW}" height="15" rx="3" fill="${INK}" opacity="0.07"/>`,
+            `<rect x="${trackX}" y="${ry + 3}" width="${w}" height="15" rx="3" fill="${a.fill}"/>`,
+            `<text x="${trackX + trackW + 12}" y="${ry + 15}" font-size="16" font-weight="600" fill="${INK}">${pct}%</text>`,
+          ].join("");
+        })
+        .join("");
+      const more =
+        b.hidden > 0
+          ? `<text x="${pad}" y="${barsTop + b.answers.length * rowH + 14}" font-size="13" fill="${MUTED}">+${b.hidden} further answer${b.hidden === 1 ? "" : "s"} not shown</text>`
+          : "";
+      const baseNote = `<text x="${CARD_WIDTH - pad}" y="${b.top + 20}" font-size="13" text-anchor="end" fill="${MUTED}">n = ${b.base.toLocaleString("en-GB")}</text>`;
+      return qText + baseNote + bars + more;
+    })
+    .join("\n");
+
+  const facts = [
+    `n = ${input.base.toLocaleString("en-GB")}`,
+    input.marginPoints !== null ? `±${input.marginPoints.toFixed(1)} pts at 95%` : null,
+    input.weighted ? "weighted" : "unweighted",
+    input.fieldwork || null,
+  ]
+    .filter(Boolean)
+    .join("   ·   ");
+
+  const stamp = unfit
+    ? [
+        `<rect x="${pad}" y="126" width="${CARD_WIDTH - pad * 2}" height="34" rx="6" fill="${WARN}" opacity="0.1"/>`,
+        `<text x="${pad + 12}" y="149" font-size="16" font-weight="700" fill="${WARN}">NOT FIT TO PUBLISH — ${esc(
+          wrapText(input.blockers.join("; "), CARD_WIDTH - pad * 2 - 230, 16, 1)[0] ?? "",
+        )}</text>`,
+      ].join("")
+    : "";
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${height}" viewBox="0 0 ${CARD_WIDTH} ${height}" font-family="Georgia, 'Times New Roman', serif" role="img" aria-label="${esc(
+    `Topline results, ${shown.length} question${shown.length === 1 ? "" : "s"}, ${input.pollName}`,
+  )}">
+<rect width="${CARD_WIDTH}" height="${height}" fill="${SAND}"/>
+<text x="${pad}" y="${pad + 6}" font-size="13" letter-spacing="3" fill="${SEA_DEEP}">POLIMETER</text>
+<text x="${pad}" y="${pad + 46}" font-size="32" font-weight="600" fill="${INK}">${esc(input.pollName)}</text>
+<text x="${pad}" y="${pad + 72}" font-size="15" fill="${MUTED}">Topline results${
+    input.fieldwork ? ` · ${esc(input.fieldwork)}` : ""
+  }</text>
+${stamp}
+${body}
+${hiddenQs > 0 ? `<text x="${pad}" y="${footerTop - 8}" font-size="14" fill="${MUTED}">+${hiddenQs} further question${hiddenQs === 1 ? "" : "s"} not shown</text>` : ""}
+<line x1="${pad}" y1="${footerTop + 18}" x2="${CARD_WIDTH - pad}" y2="${footerTop + 18}" stroke="${INK}" stroke-opacity="0.12"/>
+<text x="${pad}" y="${footerTop + 48}" font-size="16" fill="${INK}" fill-opacity="0.75">${esc(facts)}</text>
+<text x="${pad}" y="${footerTop + 74}" font-size="14" fill="${MUTED}">${esc(
+    input.companyName
+      ? `Fieldwork by ${input.companyName}. Automated telephone interviews, disclosed as automated.`
+      : "Automated telephone interviews, disclosed as automated.",
+  )}</text>
+<text x="${pad}" y="${footerTop + 98}" font-size="14" fill="${SEA_DEEP}">${esc(input.url)}</text>
+${qrPath(input.url, CARD_WIDTH - pad - 88, footerTop + 26, 88)}
+</svg>`;
+}
