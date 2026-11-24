@@ -1,6 +1,6 @@
 import { PollCallOutcome, Prisma, type Poll } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { CALL_OUTCOMES } from "./config";
+import { dialNeverConnected, resolveAnalysedOutcome } from "./outcome";
 import { hashPhone, normalizePhone, tryNormalizePhone } from "./phone";
 import { screen, type ScreenOptions, type ScreenReport } from "./numbers";
 import { rotateSurveyQuestions } from "./rotation";
@@ -162,14 +162,8 @@ async function saveCallback(call: RetellCall, poll: Poll, preferredTime: string)
 
 // --- Webhook events ----------------------------------------------
 
-const NOT_REACHED = new Set(["dial_busy", "dial_failed", "dial_no_answer"]);
-
-function outcomeFromAnalysis(value: unknown): PollCallOutcome | undefined {
-  if (typeof value !== "string") return undefined;
-  const key = value.trim().toLowerCase();
-  if (!(CALL_OUTCOMES as readonly string[]).includes(key)) return undefined;
-  return key.toUpperCase() as PollCallOutcome;
-}
+// The not-reached reasons live in ./outcome, so this early return and the
+// analysed path below cannot disagree about what "never connected" means.
 
 function parseAnswers(value: unknown): Record<string, string> {
   if (typeof value !== "string" || !value.trim()) return {};
@@ -194,7 +188,7 @@ export async function handleWebhookEvent(event: string, call: RetellCall): Promi
   }
   const pollCall = await upsertPollCall(call, poll);
 
-  if (event === "call_ended" && call.disconnection_reason && NOT_REACHED.has(call.disconnection_reason)) {
+  if (event === "call_ended" && dialNeverConnected(call.disconnection_reason)) {
     await prisma.pollCall.update({
       where: { id: pollCall.id },
       data: { outcome: PollCallOutcome.NO_ANSWER },
@@ -207,15 +201,16 @@ export async function handleWebhookEvent(event: string, call: RetellCall): Promi
   const analysis = call.call_analysis;
   const data = analysis.custom_analysis_data ?? {};
 
-  let outcome = outcomeFromAnalysis(data.call_outcome);
-  if (!outcome && analysis.in_voicemail) outcome = PollCallOutcome.VOICEMAIL;
-  // A do-not-call or callback recorded live outranks the analysis guess.
-  if (
-    pollCall.outcome === PollCallOutcome.DO_NOT_CALL ||
-    pollCall.outcome === PollCallOutcome.CALLBACK_REQUESTED
-  ) {
-    outcome = pollCall.outcome;
-  }
+  // Always a terminal outcome, never undefined: Prisma would drop an undefined
+  // field from the update below and leave the row on its IN_PROGRESS default,
+  // claiming a finished interview is still running. See ./outcome.
+  const outcome = resolveAnalysedOutcome({
+    reportedOutcome: data.call_outcome,
+    inVoicemail: analysis.in_voicemail,
+    durationMs: call.duration_ms,
+    disconnectionReason: call.disconnection_reason,
+    existing: pollCall.outcome,
+  });
 
   await prisma.pollCall.update({
     where: { id: pollCall.id },
