@@ -293,13 +293,28 @@ async function ResultsTab({
               below. Same tallies, same gate, same colours — only the layout
               differs, so a topline and a single-question card pulled from the
               same poll cannot contradict each other. */}
-          <a
-            href={`/admin/polls/${poll.id}/card?all=1`}
-            className="inline-flex items-center py-2 text-sm text-sea-deep hover:underline"
-            download
-          >
-            Download all {tallies.length} question{tallies.length === 1 ? "" : "s"} as one topline card (SVG)
-          </a>
+          {/* Collapsed, and the image is lazy, so six cards are not fetched
+              on every visit to this tab. What the preview shows is the exact
+              response the download saves — same route, same bytes, only the
+              Content-Disposition differs. */}
+          <details className="card">
+            <summary className="cursor-pointer text-sm font-medium text-sea-deep">
+              Preview the topline card for all {tallies.length} question{tallies.length === 1 ? "" : "s"}
+            </summary>
+            <img
+              src={`/admin/polls/${poll.id}/card?all=1&inline=1`}
+              alt={`Topline results card for ${poll.name}`}
+              loading="lazy"
+              className="mt-4 w-full rounded-xl border border-ink/10"
+            />
+            <a
+              href={`/admin/polls/${poll.id}/card?all=1`}
+              className="mt-3 inline-flex items-center py-2 text-sm text-sea-deep hover:underline"
+              download
+            >
+              Download this topline card (SVG)
+            </a>
+          </details>
           {tallies.map((t) => (
             <div key={t.questionId} className="space-y-2">
               <QuestionChart
@@ -311,13 +326,24 @@ async function ResultsTab({
                   what is on screen above it. It carries the publication gate's
                   verdict with it: a figure the gate refuses is stamped on the
                   graphic rather than quietly exported clean. */}
-              <a
-                href={`/admin/polls/${poll.id}/card?q=${encodeURIComponent(t.questionId)}`}
-                className="inline-flex items-center py-2 text-xs text-sea-deep hover:underline"
-                download
-              >
-                Download this result as a shareable card (SVG)
-              </a>
+              <details>
+                <summary className="cursor-pointer py-2 text-xs text-sea-deep">
+                  Preview the shareable card for this question
+                </summary>
+                <img
+                  src={`/admin/polls/${poll.id}/card?q=${encodeURIComponent(t.questionId)}&inline=1`}
+                  alt={`Results card for ${t.text ?? t.questionId}`}
+                  loading="lazy"
+                  className="mt-2 w-full rounded-xl border border-ink/10"
+                />
+                <a
+                  href={`/admin/polls/${poll.id}/card?q=${encodeURIComponent(t.questionId)}`}
+                  className="mt-2 inline-flex items-center py-2 text-xs text-sea-deep hover:underline"
+                  download
+                >
+                  Download this card (SVG)
+                </a>
+              </details>
             </div>
           ))}
         </div>

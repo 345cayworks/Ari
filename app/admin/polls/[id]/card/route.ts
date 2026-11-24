@@ -48,6 +48,13 @@ export async function GET(
   }
 
   const qs = new URL(req.url).searchParams;
+  // `?inline=1` serves the identical bytes without the attachment header, so
+  // the Results tab can show the card in an <img> before anyone downloads it.
+  // Preview and download are then the same artefact by construction: there is
+  // no second rendering of the card that could drift from the one that saves.
+  const inline = qs.get("inline") !== null;
+  const disposition = (name: string) =>
+    inline ? "inline" : `attachment; filename="${name}.svg"`;
   // `?q=` picks the question; without it, the first in canonical order, which
   // is the one the Results tab shows first.
   const wanted = qs.get("q");
@@ -114,7 +121,7 @@ export async function GET(
     return new NextResponse(sheet, {
       headers: {
         "content-type": "image/svg+xml; charset=utf-8",
-        "content-disposition": `attachment; filename="${name}.svg"`,
+        "content-disposition": disposition(name),
         "cache-control": "no-store",
       },
     });
@@ -140,7 +147,7 @@ export async function GET(
   return new NextResponse(svg, {
     headers: {
       "content-type": "image/svg+xml; charset=utf-8",
-      "content-disposition": `attachment; filename="${slug}.svg"`,
+      "content-disposition": disposition(slug),
       "cache-control": "no-store",
     },
   });
