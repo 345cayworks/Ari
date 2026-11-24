@@ -37,7 +37,7 @@ Everything below was verified against the live deployment, not just built:
 | Campaign delivery, payload side | `npm run check:delivery` — 47 checks; three run the built payload through Politracker's own `parseDelivery`, and fourteen pin all seven size limits against it from both directions |
 | `PollDelivery` on Neon | `20261102223000_poll_delivery` applied; 13 columns, 4 indexes, 0 rows; existing data untouched (2 polls, 8 calls, 19 responses) |
 | `FeedTarget` on Neon | `20261103T120000_feed_target` applied; 10 columns, 3 indexes, 0 rows; `loadFeedConfig`'s own query checked against the live schema; existing data untouched |
-| Worker carrying the sender | deployed, version `6fabc844-c670-45df-81c1-5ea979e01a14`, 2.11 MB gzipped. `polimeter.cayworks.net` is canonical and serves; `polling.cayworks.net` 308s to it with the path preserved, and all four Retell URLs plus the Telegram webhook were moved to the canonical host first. Confirmed live: `/robots.txt`, `/sitemap.xml` and `/icon.svg` all serve with the right content types, and the word "nineteen" no longer appears anywhere in the page HTML — the landing page claimed calls "across all nineteen districts" in six places and the platform does not do that; it rakes to six areas and the frame has no geography at all. Also confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt, the number screener and the RDD sampling frame. PR #1 is merged (`67ab48c`) and the `20261103T160000_rdd_frame` migration is applied to Neon — verified by reading the schema back: `RddSource` present, twelve `rdd*` columns on `PollBatch` all nullable or defaulted, existing rows untouched. The Calls tab was loaded signed in afterwards and shows the frame panel above the list screener, both rendering. The frame is **configured**: `RddSource` row "Cayman mobile RDD frame", base `https://cayman-rdd.delicate-wood-499a.workers.dev`, live disposition `live`, key fingerprint `03bc71df` — matched against the fingerprint computed locally from `RDD_TOKEN` before saving, which is what confirms the key that landed is the key intended rather than a paste that went astray. No draw has been made |
+| Worker carrying the sender | deployed, version `bb774992-fa24-476c-b151-49c3e34e53a5`, 2.17 MB gzipped. **Keep this line current — it sat at `6fabc844` through two deploys** because it was updated for the host switch and then forgotten.  `polimeter.cayworks.net` is canonical and serves; `polling.cayworks.net` 308s to it with the path preserved, and all four Retell URLs plus the Telegram webhook were moved to the canonical host first. Confirmed live: `/robots.txt`, `/sitemap.xml` and `/icon.svg` all serve with the right content types, and the word "nineteen" no longer appears anywhere in the page HTML — the landing page claimed calls "across all nineteen districts" in six places and the platform does not do that; it rakes to six areas and the frame has no geography at all. Also confirmed in the bundle: the Polimeter landing page, its JSON-LD, and — checked for regression — the test marking, Delivery tab, key form, fingerprint prompt, the number screener and the RDD sampling frame. PR #1 is merged (`67ab48c`) and the `20261103T160000_rdd_frame` migration is applied to Neon — verified by reading the schema back: `RddSource` present, twelve `rdd*` columns on `PollBatch` all nullable or defaulted, existing rows untouched. The Calls tab was loaded signed in afterwards and shows the frame panel above the list screener, both rendering. The frame is **configured**: `RddSource` row "Cayman mobile RDD frame", base `https://cayman-rdd.delicate-wood-499a.workers.dev`, live disposition `live`, key fingerprint `03bc71df` — matched against the fingerprint computed locally from `RDD_TOKEN` before saving, which is what confirms the key that landed is the key intended rather than a paste that went astray. No draw has been made |
 
 **Not yet exercised:** `lib/ari/brain.ts` has still never run against the live
 Anthropic API — `Message` and `ApiUsage` are both empty. Any plain (non-slash)
@@ -466,10 +466,32 @@ some time while the webhook delivered rarely or never.
 `https://polimeter.cayworks.net/api/retell/webhook`; that endpoint answers 401
 to an unsigned POST, so it is reachable and guarded; no per-call webhook
 override is sent at call creation; phone numbers expose no webhook field. Not
-established: whether Retell posts at all, or posts and is rejected. The
-difference is visible in one run — hold `npx wrangler tail` open, place one
-call, and watch for a POST to `/api/retell/webhook`. A 401 means the signature
-check; nothing at all means Retell is not sending.
+**Answered on 2026-11-10.** `wrangler tail` held open while one call was
+placed: Retell delivered **nine POSTs** to `/api/retell/webhook` during that
+single call and every one was answered 401 — the nine are its retries. So it
+was never "the webhook is not firing". The header is well formed and current
+(`v=<ms>,d=<64 hex>`, timestamp within seconds) and the verifier implements
+Retell's documented scheme exactly, so the shape is right and the key is
+wrong.
+
+Retell's own documentation says only the API key carrying the **webhook
+badge** signs webhooks; the others stay valid for API requests. That matches
+every symptom — the Worker's outbound calls succeed while every inbound
+delivery is rejected as forged. **The remaining step is yours**: find which
+key has the badge at `https://dashboard.retellai.com/settings/api-keys` and,
+if it is not the one in `RETELL_API_KEY`, install it as `RETELL_WEBHOOK_KEY`.
+Verification reads that first and falls back, so leaving it unset changes
+nothing. The deprecation notice of 2026-11-16 names the integration's key as
+`Ari_Polling_Key`, which is where to start looking.
+
+**A rejected signature now says why.** Both the webhook route and the
+functions route log which of the three checks failed — malformed header,
+stale timestamp, or digest mismatch — because they mean entirely different
+things. Their absence is why this ran unnoticed since October: a bare 401 was
+returned, nothing was written anywhere, and the only symptom was calls not
+appearing. The functions route is the worse of the two, since it carries
+`record_answer`: a rejected signature throws a respondent's answer away while
+the interview continues sounding normal.
 
 **Meanwhile interviews are still recorded**, because reconcile works again and
 is idempotent. It is a button somebody has to press, not a pipeline.
